@@ -1,0 +1,1 @@
+/home/pi/kummer-pi/kummer-data.json

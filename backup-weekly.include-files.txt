@@ -1,0 +1,10 @@
+/home/pi/kummer-pi
+/etc/ssh/sshd_config
+/etc/samba/smb.conf
+/etc/crontab
+/var/spool/cron/crontabs/pi
+/etc/rc.local
+/etc/letsencrypt/live/cluckcluck.us
+/var/www/nextcloud/config
+/var/www/nextcloud/themes
+/var/www/nextcloud/data

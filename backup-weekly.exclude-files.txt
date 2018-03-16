@@ -1,0 +1,4 @@
+/home/pi/kummer-pi/*.log
+/home/pi/kummer-pi/node_modules
+/var/www/nextcloud/data/*/files/Photos
+/var/www/nextcloud/data/updater-*
