@@ -43,6 +43,9 @@ var _configuration = nodeenvconfiguration({
   //defaults: defaultConfiguration,
   prefix: 'ku'
 });
+if (Object.keys(_configuration).length === 0)
+  throw new Error("Missing configuration data in environment variables");
+
 
 var _today = moment().startOf("day");
 var _tomorrow = _today.clone().add(1, "day");
