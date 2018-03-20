@@ -1,4 +1,6 @@
 /home/pi/kummer-pi/*.log
 /home/pi/kummer-pi/node_modules
+/home/pi/kummer-pi/selenium-drivers-pi
+/home/pi/kummer-pi/selenium-drivers-win32
 /var/www/nextcloud/data/*/files/Photos
 /var/www/nextcloud/data/updater-*
