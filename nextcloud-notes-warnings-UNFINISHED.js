@@ -10,6 +10,10 @@
 // Parameters: loglevel...Is optional. Determines the loglevel used:
 //                        error|warn|info|verbose (default is "error")
 //
+// However, this script is configured via a number of environment variables,
+// and one way of executing it is as follows:
+//   sh -ac '. ./kummer-pi.env; node nextcloud-notes-warning.js verbose'
+//
 //
 // Required NPM Packages
 // ---------------------
@@ -26,35 +30,13 @@
 //                   npm install winston
 //
 //
-// Development Cycle
-// -----------------
-// Because this is all JavaScript, I can develop on Windows using Chrome, then
-// copy the files to the Pi and run it on the Pi. I have used FileZilla to do
-// that copy. Now I've set up a Samba share on my Pi so I can just access my code
-// folder directly from Windows (e.g. \\raspberrypi\myshare).
-//
-//
-// Secrets.dat
-// -----------
-// See comments in kummer-utils.js
-//
-//
-// Other Notes
-// -----------
-//   - Need to hard-code SCRIPT_PATH because, when you run this script on the
-//     Pi using cron, it is run as a different user and not out of the same
-//     folder where this script resides
+// Notes
+// -----
 //   - NextCloud Notes API (https://github.com/nextcloud/notes/wiki/Notes-0.2)
 //      - Need to use "Basic Auth" (add username and password to header)
 //      - To get all notes, use url https://cluckcluck.us/index.php/apps/notes/api/v0.2/notes,
 //        and expect to be able to use "localhost"
 
-
-var PLATFORM = process.platform;     // win32|linux
-var RUNNING_ON_WINDOWS = (PLATFORM.match(/win32/i) != null);
-var SCRIPT_PATH = RUNNING_ON_WINDOWS
-      ? "./"
-      : "/home/pi/kummerjs/";
 
 var moment = require("moment");
 var fs = require("fs");
@@ -63,19 +45,10 @@ var logger = require("winston");
 var fetch = require("node-fetch");
 var wuzzy = require("wuzzy");
 var mysql = require("promise-mysql");
-var utils = require(SCRIPT_PATH + "kummer-utils.js");
+var path = require("path");
+var utils = require(path.join(__dirname, "kummer-utils.js"));
 
-logger.level = utils.getLogLevelFromParameters("error");
-logger.add(logger.transports.File, {
-  json: false,
-  formatter: utils.logFormatter,
-  filename: SCRIPT_PATH + "nextcloud-notes-warnings.log" });
-
-
-// Decrypt these lines if you need to decrypt secrets.dat into secrets.json
-// decryptJsonFile(SCRIPT_PATH + SECRETS_JSON, SCRIPT_PATH + SECRETS_JSON.replace(".dat", ".json"));
-// return;
-
+utils.configureLogger(logger, __filename);
 
 // Define an uncaughtException error handler to log if something really bad happens
 function uncaughtExceptionHandler(options, err) {
@@ -86,7 +59,10 @@ process.on("uncaughtException", uncaughtExceptionHandler.bind(null, {exit:true})
 
 
 logger.info("------------------------------------------------------------");
-findDuplicatesForAllUsers();
+  if (utils.isRunningOnWindows)
+    throw new Error("This script -= MUST =- be run on the Pi");
+
+  findDuplicatesForAllUsers();
 return;
 
 
@@ -97,7 +73,7 @@ function findDuplicatesForAllUsers() {
 
 
   // Only search for duplicates for family members who have a NextCloudPassword and an Email address
-  var url = utils.configuration.NextCloud.NotesBaseUrl + "/notes";
+  var url = utils.configuration.nextcloud.notes.base.url + "/notes";
 
   var connection = null;
   var allPromises = [];
@@ -114,10 +90,12 @@ function findDuplicatesForAllUsers() {
     connection = conn;
 
     utils
-      .getFamilyMemberSecrets()
-      .filter(fm => fm.NextCloudScriptsPassword != null && fm.Email != null)
-      .forEach(fms => {
-        allPromises.push(getNotesForOneUser(connection, url, fms));
+      .configuration
+      .family
+      .allMembers
+      .filter(fm => fm.hasOwnProperty("nextcloud") && fm.nextcloud.scripts.password != null && fm.email != null)
+      .forEach(fm => {
+        allPromises.push(getNotesForOneUser(connection, url, fm));
       });
 
     logger.verbose("allpromises=%s", allPromises.length);
@@ -151,14 +129,14 @@ function findDuplicatesForAllUsers() {
 }
 
 
-function getNotesForOneUser(connection, url, fms) {
-  logger.verbose("%s --> Getting all notes", fms.Name);
+function getNotesForOneUser(connection, url, familyMember) {
+  logger.verbose("%s --> Getting all notes", familyMember.name);
 
   // should return a promise
   return new Promise((resolve, reject) => {
     var authorization =
       "Basic " +
-      new Buffer(format("{0}:{1}", fms.Name, fms.NextCloudScriptsPassword)).toString("base64");
+      new Buffer(format("{0}:{1}", familyMember.name, familyMember.nextcloud.scripts.password)).toString("base64");
 
     fetch(url, {
       method: "get",
@@ -169,7 +147,7 @@ function getNotesForOneUser(connection, url, fms) {
     })
     .then(r => r.json())
     .then(notes => {
-      return getAllCachedCalculations(connection, fms, notes));
+      return getAllCachedCalculations(connection, familyMember, notes));
     });
   });
 }
@@ -187,7 +165,7 @@ function getAllCachedCalculations(connection, familyMemberSecrets, notes) {
 }
 
 
-function findDuplicateNotesForOneUser(connection, rows, familyMemberSecrets, notes) {
+function findDuplicateNotesForOneUser(connection, rows, familyMember, notes) {
 // DOCUMENTATION!!!!!
 //
 // Explanation of logic, which includes optimization. Assume list of notes is
@@ -209,7 +187,7 @@ function findDuplicateNotesForOneUser(connection, rows, familyMemberSecrets, not
 // Wuzzy Levenshtein: range is 0-1, higher # is closer match, perfect match = 1
 //
   return new Promise(resolve => {
-  logger.info("%s --> Searching for duplicate notes", familyMemberSecrets.Name);
+  logger.info("%s --> Searching for duplicate notes", familyMember.name);
 
     var emailMessage = "";
     var isDuplicate = false;
@@ -229,7 +207,7 @@ function findDuplicateNotesForOneUser(connection, rows, familyMemberSecrets, not
 
         // Compare noteLookingForDupesOf with every note, looking for duplicates
         notes.forEach(noteToCompareTo => {
-          if (compareTheseNotes(familyMemberSecrets.Name, noteLookingForDupesOf, noteToCompareTo)) {
+          if (compareTheseNotes(familyMember.name, noteLookingForDupesOf, noteToCompareTo)) {
             matchingRow = rows.find(r => r.note_a_id === noteLookingForDupesOf.id && r.note_b_id === noteToCompareTo.id);
             distanceCalculated = moment().format("X")
 
@@ -290,17 +268,17 @@ function findDuplicateNotesForOneUser(connection, rows, familyMemberSecrets, not
     if (emailMessage.length > 0) {
       // We have some dupes to tell the user about
       emailMessage =
-        format("{0},\n\nThese notes could be duplicates:\n{1}", familyMemberSecrets.Name, emailMessage);
+        format("{0},\n\nThese notes could be duplicates:\n{1}", familyMember.name, emailMessage);
 
-      utils.sendGmail(utils.secrets.Credentials.Pi.Gmail.UserName, 
-        utils.secrets.Credentials.Pi.Gmail.Password,
-        format('"{0}" <{1}>', "Kummer Cloud", utils.secrets.Credentials.Pi.Gmail.UserName),
-        format('"{0} {1}" <{2}>', familyMemberSecrets.Name, "Kummer", familyMemberSecrets.Email),
+      utils.sendGmail(utils.configuration.pi.gmail.username, 
+        utils.configuration.pi.gmail.password,
+        format('"{0}" <{1}>', "Kummer Cloud", utils.configuration.pi.gmail.username),
+        format('"{0} {1}" <{2}>', familyMember.name, "Kummer", familyMember.email),
         "NextCloud Notes - Possible duplicates", emailMessage, null);
     }
 
-    logger.info("%s     Done", " ".repeat(familyMemberSecrets.Name.length));
-    resolve(familyMemberSecrets.Name);
+    logger.info("%s     Done", " ".repeat(familyMember.name.length));
+    resolve(familyMember.name);
 });
 }
 
@@ -324,7 +302,9 @@ function compareTheseNotes(whoseNotes, noteA, noteB) {
   var result =  
     (noteA.id !== "skip") &&
     (noteB.id !== "skip") &&
-    (noteA.id !== noteB.id);   //&&
+    (noteA.id !== noteB.id) &&
+    (!isNull(noteA.category, "").match(/WORK/)) &&
+    (!isNull(noteB.category, "").match(/WORK/));
     // (brianPossibleDupe || jodiPossibleDupe);
 
   logger.verbose ("    Comparing to #%s:%s:%s => possible dupe B/J=%s/%s, COMPARE=%s", 
