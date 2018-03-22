@@ -1,1 +1,6 @@
 /home/pi/kummer-pi/kummer-data.json
+/var/www/nextcloud/data/Brian/files/Documents
+/var/www/nextcloud/data/Brian/files/Documents (Shared Family)
+/var/www/nextcloud/data/Brian/files/Notes
+/var/www/nextcloud/data/Jodi/files/Documents
+/var/www/nextcloud/data/Jodi/files/Notes

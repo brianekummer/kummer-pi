@@ -1,3 +1,4 @@
+/home/pi/kummer-pi/.git
 /home/pi/kummer-pi/*.log
 /home/pi/kummer-pi/node_modules
 /home/pi/kummer-pi/selenium-drivers-pi
