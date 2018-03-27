@@ -95,24 +95,6 @@ function findDuplicatesForAllUsers() {
       .then(r => r.json())
       .then(notes => findDuplicateNotesForOneUser(fm, notes));
     });
-
-    // TODO- Delete old records from find_duplicate_notes. Could likely
-    // join to oc_filecache...
-    // THIS is what I want, but this only deletes records AFTER file is deleted AND trash is emptied
-    // (Otherwise, files are listed in oc_files_trash)
-    // SELECT fd.note_a_id, fd.note_b_id, nca.fileid, ncb.fileid
-    //   FROM kummer.find_duplicate_notes fd
-    //        LEFT JOIN nextcloud.oc_filecache nca ON nca.fileid = fd.note_a_id
-    //        LEFT JOIN nextcloud.oc_filecache ncb ON ncb.fileid = fd.note_b_id
-    //  WHERE nca.fileid IS NULL OR ncb.fileid IS NULL;
-
-
-    // This is the DELETE command I want to run
-    // DELETE fd
-    //   FROM kummer.find_duplicate_notes fd
-    //        LEFT JOIN nextcloud.oc_filecache nca ON nca.fileid = fd.note_a_id 
-    //        LEFT JOIN nextcloud.oc_filecache ncb ON ncb.fileid = fd.note_b_id
-    //  WHERE nca.fileid IS NULL OR ncb.fileid IS NULL;
 }
 
 
@@ -242,13 +224,53 @@ function findDuplicateNotesForOneUser(familyMember, notes) {
     }
 
     return null;
-  }).then((results) => {
-    logger.info("%s     Done", " ".repeat(familyMember.name.length));
+  }).then(results => {
+    // It is not efficient to run this same command for each user, but I am too
+    // lazy to figure out how to get the main loop to finish all promises before
+    // executing this.
+    logger.verbose("%s --> Deleting all old records", familyMember.name);
+    deleteOldRecords();
+  }).then(results => {
+    logger.info("%s --> Done, closing connection", familyMember.name);
     connection.end();
   }).catch((error) => {
     if (connection && connection.end) connection.end();
     logger.error(error);
   });
+}
+
+
+function deleteOldRecords() {
+    // TODO- Delete old records from find_duplicate_notes. Could likely
+    // join to oc_filecache...
+    // THIS is what I want, but this only deletes records AFTER file is deleted AND trash is emptied
+    // (Otherwise, files are listed in oc_files_trash)
+    // SELECT fdn.note_a_id, fdn.note_b_id, fca.fileid, fcb.fileid
+    //   FROM kummer.find_duplicate_notes fdn
+    //        LEFT JOIN nextcloud.oc_filecache fca ON nca.fileid = fdn.note_a_id
+    //        LEFT JOIN nextcloud.oc_filecache fcb ON ncb.fileid = fdn.note_b_id
+    //  WHERE fca.fileid IS NULL OR fcb.fileid IS NULL;
+
+    var sql =
+      "DELETE fdn " +
+      "  FROM kummer.find_duplicate_notes fdn " +
+      "       LEFT JOIN nextcloud.oc_filecache fca ON fca.fileid = fdn.note_a_id " +
+      "       LEFT JOIN nextcloud.oc_filecache fcb ON fcb.fileid = fdn.note_b_id " +
+      " WHERE fca.fileid IS NULL OR fcb.fileid IS NULL;"
+
+    mysql.createConnection({
+      host: "localhost",
+      user: utils.configuration.nextcloud.db.username,
+      password: utils.configuration.nextcloud.db.password,
+      port: utils.configuration.nextcloud.db.port,
+      database: "kummer"
+    }).then((conn) => {
+      connection = conn;
+      return connection.query(sql);
+    }).then(results => {
+      connection.end();
+      return results;
+    });
 }
 
 
