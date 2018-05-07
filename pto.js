@@ -48,10 +48,31 @@ function uncaughtExceptionHandler(options, err) {
 }
 process.on('uncaughtException', uncaughtExceptionHandler.bind(null, {exit:true}));
 
-
 setSlackStatusIfNecessary();
 return;
 
+
+function getRuntimeFromParameters(morningRuntimeLimit, eveningRuntimeLimit) {
+  // Look for a parameter to say if this is being run in the morning or evening.
+  //   - Valid values are morning|evening|other
+  //   - If there is no runtime in the parameters, use times in morningRuntimeLimit
+  //     and eveningRuntimeLimit to decide.
+  //   - process.argv elements are:
+  //       0 = name of the app executing the process (e.g. node)
+  //       1 = name of the js script
+  var value = process
+    .argv
+    .slice(2)
+    .find(p => p.match(/(morning|evening|other)/i));
+
+  if (value == null) {
+    value = (moment().format("HHmm") <= morningRuntimeLimit) ? "morning" :
+            (moment().format("HHmm") >= eveningRuntimeLimit) ? "evening" :
+            "other";
+  }
+
+  return value;
+}
 
 
 function setSlackStatusIfNecessary() {
@@ -75,7 +96,12 @@ function setSlackStatusIfNecessary() {
       logger.verbose("Successfully read calendar file, now fixing it");
 
       // Manually fix (via code) each issue we find with Cozi's calendar
-      calendarData = calendarData.replace(/until=20160101T000000\b/ig, "UNTIL=20160101T000000Z");
+      //  1. Cozi doesn't include the time zone on UNTIL portion of recurring all-day appointments
+      calendarData = calendarData.replace(/until=(\d{8}T\d{6})\b/ig, "UNTIL=$1Z");
+
+      // For debugging purposes, save fixed calendar
+      //var fs = require("fs");
+      //fs.writeFileSync("cozi-fixed.ics", calendarData);
 
       var calendarEvents = ical.parseICS(calendarData);
 
@@ -101,72 +127,109 @@ function setSlackStatusIfNecessary() {
 function parseCalendarFile(calendarEvents) {
   logger.verbose("In parseCalendarFile");
 
+  var scriptRuntime = getRuntimeFromParameters("0700", "1400");
   var ptoEventsStartingToday = [];
   var ptoStartTime = null;
   var ptoEndTime = null;
+  var formattedPtoTodayStartTime = null;
+  var formattedPtoTodayEndTime = null;
   var nextWorkingDay = null;
   var slackText = "";
-
-  var phonePtoMessage = format("today_pto|{0}|", moment().format("YYYYMMDDHHmm"));
+  var phonePtoMessage = null;
 
   // Get all consecutive PTO events starting today 
   ptoEventsStartingToday = getConsecutivePtoEvents(calendarEvents, utils.today)
   if (ptoEventsStartingToday.length > 0) {
+    // I am on PTO today :-)
     ptoStartTime = moment(ptoEventsStartingToday[0].start, ICAL_FORMAT);
     ptoEndTime = moment(ptoEventsStartingToday[ptoEventsStartingToday.length-1].end, ICAL_FORMAT);
+    formattedPtoTodayStartTime = ptoStartTime.format("HHmm");
+    formattedPtoTodayEndTime = (ptoEndTime > utils.tomorrow) ? "2359" : ptoEndTime.format("HHmm");
 
-    phonePtoMessage += format("{0}|{1}|",
-      ptoStartTime.format("HHmm"),
-      (ptoEndTime > tomorrow) ? "2359" : ptoEndTime.format("HHmm"));
+    if (scriptRuntime.match(/morning/i)) {
+      // Running this script in the morning, so set my Slack status to say I'm on PTO
+      logger.info("PTO today from %s - %s, changing Slack status to %s", formattedPtoTodayStartTime, formattedPtoTodayEndTime, slackText);
+      
+      slackText = buildSlackPtoText(ptoEventsStartingToday, ptoStartTime, ptoEndTime);
+      setSlackStatus(slackText, getSlackVacationEmoji());
 
-    if (ptoStartTime.format("HHmm") > "0800") {
-      // PTO starts today after 8:00am, so I'll be at work at least some of this morning.
-      // My Outlook addin will have to set this status at the time the PTO starts, using
-      // logic very similar to what's below.
-    } else {
-      // PTO starts at the beginning of today
-      slackText = "On PTO ";
+    } else if (scriptRuntime.match(/evening/i)) {
+      // Running this script in the evening, so clear my Slack status IF my PTO ends today
+      if (ptoEndTime <= utils.tomorrow) {
+        logger.info("PTO ends today @ %s, clearing Slack status", formattedPtoTodayEndTime);
 
-      if (ptoEventsStartingToday.length == 1) {
-        slackText += "today";
+        // I should really check my Slack status and clear it only if it is the PTO emoji,
+        // or else I risk clearing my status while I'm WFH and my status is "working remotely"
+        setSlackStatus("", "");
+
       } else {
-        // If PTO does not end at midnight, then ptoEndTime is the day we're
-        // returning to work. If PTO ends at midnight, then ptoEndDate is the
-        // day AFTER our PTO ends, and we should calculate the next working day.
-        nextWorkingDay = (ptoEndTime.format("HHmmss") != "000000") 
-          ? ptoEndTime
-          : addBusinessDays(ptoEndTime.clone().add(-1, "days"), 1);
-        var dateFormat = (nextWorkingDay.diff(utils.today, "days") < 7)
-          ? "dddd" 
-          : "dddd, MMM D";
-        slackText += "until " + nextWorkingDay.format(dateFormat);
+        logger.info("PTO continues tomorrow, not changing Slack status");
       }
-      if (ptoEndTime.format("HHmmss") != "000000") {
-        if (slackText == "today")
-          slackText += "until";
-        slackText += " around " + ptoEndTime.format("h:mm a");
-      }
+
+    } else {
+      logger.info("PTO today from %s - %s, but script not run in morning or evening, not changing Slack status",
+        formattedPtoTodayStartTime, formattedPtoTodayEndTime);
     }
+
   } else {
-    phonePtoMessage += "||";
+    logger.info("No PTO today, not changing Slack status");
+    formattedPtoTodayStartTime = "";
+    formattedPtoTodayEndTime = "";
   }
 
-  var messageParts = phonePtoMessage.split("|");
-  logger.info(phonePtoMessage.includes("|||")
-    ? "No PTO today - no Slack status change" 
-    : format("PTO today from {0} - {1}", messageParts[2], messageParts[3]));
-  utils.sendMessageToPhone(utils.configuration.family["brian"], phonePtoMessage);
+  if (scriptRuntime.match(/morning/i)) {
+    // Send message to my phone in the morning so it knows if I'm on PTO today
+    phonePtoMessage = format("today_pto|{0}|{1}|{2}|", 
+      moment().format("YYYYMMDDHHmm"), 
+      formattedPtoTodayStartTime, 
+      formattedPtoTodayEndTime);
+    utils.sendMessageToPhone(utils.configuration.family["brian"], phonePtoMessage);
+  }
+}
 
-  if(slackText.length > 0) {
-    // Get the emoji for being on vacation
+
+function getSlackVacationEmoji() {
     var slackStatusVacationParts = utils.configuration.slack.status.vacation.split("|");
-    var slackStatusVacationEmoji = slackStatusVacationParts[0].match(/^:.*:$/)
+
+    return slackStatusVacationParts[0].match(/^:.*:$/)
       ? slackStatusVacationParts[0]
       : slackStatusVacationParts[1];
+}
 
-    // Set the Slack status
-    setSlackStatus(slackText, slackStatusVacationEmoji);
+
+function buildSlackPtoText(ptoEventsStartingToday, ptoStartTime, ptoEndTime) {
+  var slackText = "";
+
+  if (ptoStartTime.format("HHmm") > "0800") {
+    // PTO starts today after 8:00am, so I'll be at work at least some of this morning.
+    // My Outlook addin will have to set this status at the time the PTO starts, using
+    // logic very similar to what's below.
+  } else {
+    // PTO starts at the beginning of today
+    slackText = "On PTO ";
+
+    if (ptoEventsStartingToday.length == 1) {
+      slackText += "today";
+    } else {
+      // If PTO does not end at midnight, then ptoEndTime is the day we're
+      // returning to work. If PTO ends at midnight, then ptoEndDate is the
+      // day AFTER our PTO ends, and we should calculate the next working day.
+      nextWorkingDay = (ptoEndTime.format("HHmmss") != "000000")
+        ? ptoEndTime
+        : addBusinessDays(ptoEndTime.clone().add(-1, "days"), 1);
+      var dateFormat = (nextWorkingDay.diff(utils.today, "days") < 7)
+        ? "dddd"
+        : "dddd, MMM D";
+      slackText += "until " + nextWorkingDay.format(dateFormat);
+    }
+    if (ptoEndTime.format("HHmmss") != "000000") {
+      if (slackText == "today")
+        slackText += "until";
+      slackText += " around " + ptoEndTime.format("h:mm a");
+    }
   }
+
+  return slackText;
 }
 
 
@@ -337,7 +400,7 @@ function setSlackStatus(slackText, slackEmoji) {
   .then(function(result) {
     var resultString = JSON.stringify(result);
     if (result.statusText == "OK") {
-      logger.info("Changed my Slack status to %s %s", slackEmoji, slackText);
+      logger.info("Successfully changed my Slack status to %s %s", slackEmoji, slackText);
     } else {
       logger.error("Error changing my Slack status to %s %s, and this error occurred:\n%s", slackEmoji, slackText, resultString);
     }

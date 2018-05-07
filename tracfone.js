@@ -476,12 +476,18 @@ function sendToPhones() {
   var jacobData = getFamilyMemberData("Jacob");
   var kaley = utils.configuration.family["kaley"];
   var kaleyData = getFamilyMemberData("Kaley");
+  var home = utils.configuration.family["home"];
+  var homeData = getFamilyMemberData("Home");
+  var pop = utils.configuration.family["pop"];
+  var popData = getFamilyMemberData("Pop");
 
   _driver
-    .then(() => sendAllBalancesToBrian(brian, [ brianData, jodiData, jacobData, kaleyData ]))
+    .then(() => sendAllBalancesToBrian(brian, [ brianData, jodiData, jacobData, kaleyData, homeData, popData ]))
     .then(() => sendSomeoneTheirBalances(jodi, jodiData))
     .then(() => sendSomeoneTheirBalances(jacob, jacobData))
     .then(() => sendSomeoneTheirBalances(kaley, kaleyData))
+    .then(() => sendSomeoneTheirBalances(home, homeData))
+    .then(() => sendSomeoneTheirBalances(pop, popData))
 
     // Because Jodi and Kaley sometimes have issues receiving their
     // balance, we also send their balances to my phone, so my phone
@@ -543,7 +549,7 @@ function sendAllBalancesToBrian(brian, familyMembersData) {
 
 function sendSomeoneTheirBalances(familyMember, familyMemberData) {
   var msg = fullPhoneMessage(familyMemberData);
-  if (shouldSendLatestBalancesToPhone(familyMemberData))
+  if (familyMember.autoremotekey != null && shouldSendLatestBalancesToPhone(familyMemberData))
   {
     utils.sendMessageToPhone(familyMember, msg);
   } else {
