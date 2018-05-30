@@ -86,18 +86,74 @@ logger.info("------------------------------------------------------------");
   var _driver = utils.getWebDriver();
   var _tempData = null;
 
-  _driver
-    .then(() => utils
-      .configuration
-      .family
-      .allMembers
-      .forEach(fm =>
-        _driver.then(() => getBalances(fm, false))))
-    //.then(() => loadPaymentHistory())
-    .then(() => utils.saveJsonFile(DATA_JSON, _data))
-    .then(() => sendToPhones())
-    .then(() => utils.webDriverQuit(_driver));
 
+  // TODO- add "action" variable, will be CLI param: get-balances|add-purchase|list-purchases
+  //   tracfone.js [verbose] get-balances 
+  //   tracfone.js [verbose] add-purchase Kaley 10.00 [5/22/2018]       (purchase date defaults to today)
+  //   tracfone.js [verbose] list-purchases Kaley
+
+  switch (getScriptAction().toLowerCase()) {
+    case "get-balances":
+      _driver
+        .then(() => utils
+          .configuration
+          .family
+          .allMembers
+          .forEach(fm =>
+            _driver.then(() => getBalances(fm, false))))
+        //.then(() => loadPaymentHistory())
+        .then(() => utils.saveJsonFile(DATA_JSON, _data))
+        .then(() => sendToPhones())
+        .then(() => utils.webDriverQuit(_driver));
+      break;
+
+    case "list-purchases":
+      var purchaser = getFamilyMemberFromParameters();
+      if (purchaser == null) {
+        logger.error("Action is LIST-PURCHASES, but no family member was specified");
+      } else {
+        logger.info("Purchases by %s:", purchaser);
+
+        var purchases =
+          getFamilyMemberData(purchaser)
+          .TracFonePurchases
+          .sort((a, b) => {
+            return (a.PurchaseDate > b.PurchaseDate) ? -1 :
+                   (a.PurchaseDate < b.PurchaseDate) ? 1  :
+                   0;
+          });
+
+        purchases.forEach(p =>
+          logger.info("   %s: $%s %s",
+            p.PurchaseDate, p.Amount,
+            (p.Comment != null && p.Comment != undefined && p.Comment.length > 0 ? "(" + p.Comment + ")" : "")
+          )
+        );
+      }
+      break;
+
+    case "add-purchase":
+      var purchaseInfo = getPurchaseInfoFromParameters();
+      if (purchaseInfo == null) {
+        logger.error("Action is ADD-PURCHASE, but not enough information was specified");
+      } else {
+        _data
+          .FamilyMembers
+          .filter(fm => fm.Name.toLowerCase() == purchaseInfo.purchaser.toLowerCase())[0]
+          .TracFonePurchases
+          .push({
+            PurchaseDate: purchaseInfo.date,
+            Amount: purchaseInfo.amount,
+            Comment: "Added by script"
+          });
+
+        utils.saveJsonFile(DATA_JSON, _data);
+
+        logger.info("Added a purchase for %s for $%s on %s", purchaseInfo.purchaser, purchaseInfo.amount, purchaseInfo.date);
+      }
+      break;
+
+  }
 return;
 
 
@@ -109,6 +165,65 @@ function getFormattedRunDate() {
 function getFamilyMemberData(familyMemberName) {
   return _data.FamilyMembers.filter(fm => fm.Name.toLowerCase() == familyMemberName.toLowerCase())[0];
 }
+
+
+function getScriptAction() {
+  // Look for scriptAction in parameters.
+  // Valid values are get-balances|add-purchase|list-purchases
+  // If there is no script action in the parameters, default to get-balances.
+  // Note that process.argv elements are:
+  //   0 = name of the app executing the process (e.g. node)
+  //   1 = name of the js script
+  var value = process
+    .argv
+    .slice(2)
+    .find(p => p.match(/(get-balances|add-purchase|list-purchases)/i));
+
+  return (value || "get-balances");
+}
+
+
+function getFamilyMemberFromParameters() {
+  // TODO- get list of family members from config data, not hard-coded
+
+  return process
+    .argv
+    .slice(2)
+    .find(p => p.match(/(brian|jodi|jacob|kaley|home)/i));
+}
+
+
+function getPurchaseInfoFromParameters() {
+  // "add Kaley 10.00 5/22/2018" or "add Kaley 10.00 2018-05-22"
+  //   cannot use $ in amount, and for my search, MUST include decimal point
+  var args = process
+    .argv
+    .slice(2);
+  var purchaseInfo = null;
+  if (args.find(p => p.match(/add/i))) {
+    // Running this script to add a purchase to our log
+    var purchaser      = getFamilyMemberFromParameters();
+    var purchaseAmount = args.find(p => p.match(/\d+\.\d\d/));
+    var purchaseDate   = args.find(p => p.match(/(\d{1,2}\/\d{1,2}\/\d{4})|(\d{4}-\d{2}-\d{2})/));
+
+    if (purchaser != null && purchaseAmount != null) {
+      // Default purchaseDate to today, or convert it from mm/dd/yyyy to yyyy-mm-dd if necessary
+      purchaseDate = 
+        purchaseDate == null ? utils.today.format("YYYY-MM-DD") :
+        purchaseDate.match(/\//) ? moment(purchaseDate, "MM/DD/YYYY").format("YYYY-MM-DD") :
+        purchaseDate;
+
+      purchaseInfo = {
+        "purchaser": purchaser,
+        "amount": purchaseAmount,
+        "date": purchaseDate
+      };
+    };
+
+    return purchaseInfo;
+  }
+}
+
 
 
 //region TracFone Calculations
@@ -352,6 +467,7 @@ function tellMeResults() {
     _tempData.Balances.Texts,
     _tempData.Balances.Mb);
 }
+
 
 
 //endregion
