@@ -107,6 +107,32 @@ logger.info("------------------------------------------------------------");
         .then(() => utils.webDriverQuit(_driver));
       break;
 
+    case "list-balances":
+      var familyMember = getFamilyMemberFromParameters();
+      if (familyMember == null) {
+        logger.error("Action is LIST-BALANCES, but no family member was specified");
+      } else {
+        logger.info("Balances for %s:", familyMember);
+
+        var cutoffDate = utils.today.subtract(45, "days").format("YYYY-MM-DD");
+        var balances =
+          getFamilyMemberData(familyMember)
+          .TracFoneBalances
+          .sort((a, b) => {
+            return (a.BalanceDate > b.BalanceDate) ? -1 :
+                   (a.BalanceDate < b.BalanceDate) ? 1  :
+                   0;
+          })
+          .filter(b => b.BalanceDate > cutoffDate);
+
+        balances.forEach(b =>
+          logger.info("   %s: %s %s %s",
+            moment(b.BalanceDate).format("YYYY-MM-DD HH:mm"), b.Minutes, b.Texts, b.Mb
+          )
+        );
+      }
+      break;
+ 
     case "list-purchases":
       var purchaser = getFamilyMemberFromParameters();
       if (purchaser == null) {
@@ -177,7 +203,7 @@ function getScriptAction() {
   var value = process
     .argv
     .slice(2)
-    .find(p => p.match(/(get-balances|add-purchase|list-purchases)/i));
+    .find(p => p.match(/(get-balances|list-balances|add-purchase|list-purchases)/i));
 
   return (value || "get-balances");
 }
