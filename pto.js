@@ -77,7 +77,7 @@ function getRuntimeFromParameters(morningRuntimeLimit, eveningRuntimeLimit) {
 
 function setSlackStatusIfNecessary() {
   var searchStartDate = utils.today.clone();
-  var searchEndDate = utils.today.endOf("day");
+  var searchEndDate = searchStartDate.clone().endOf("day");
 
   // Apparently Cozi has some non-standard stuff that the ical
   // library doesn't like. So we'll read it into a variable 
@@ -148,9 +148,10 @@ function parseCalendarFile(calendarEvents) {
 
     if (scriptRuntime.match(/morning/i)) {
       // Running this script in the morning, so set my Slack status to say I'm on PTO
+      slackText = buildSlackPtoText(ptoEventsStartingToday, ptoStartTime, ptoEndTime);
+      
       logger.info("PTO today from %s - %s, changing Slack status to %s", formattedPtoTodayStartTime, formattedPtoTodayEndTime, slackText);
       
-      slackText = buildSlackPtoText(ptoEventsStartingToday, ptoStartTime, ptoEndTime);
       setSlackStatus(slackText, getSlackVacationEmoji());
 
     } else if (scriptRuntime.match(/evening/i)) {
@@ -208,7 +209,7 @@ function buildSlackPtoText(ptoEventsStartingToday, ptoStartTime, ptoEndTime) {
     // PTO starts at the beginning of today
     slackText = "On PTO ";
 
-    if (ptoEventsStartingToday.length == 1) {
+    if (ptoEndTime.isSame(utils.today, "day")) {
       slackText += "today";
     } else {
       // If PTO does not end at midnight, then ptoEndTime is the day we're
@@ -259,11 +260,15 @@ function getConsecutivePtoEvents(allEvents, searchStartDate) {
       // Current event is not consecutive, so delete tail end of the array,
       // NOT including i (the current event). This will leave upcomingPtoEvents
       // with only the consecutive PTO events.
-      upcomingPtoEvents.slice(0, i);
+      upcomingPtoEvents = upcomingPtoEvents.slice(0, i);
     }
   }
-
   //DebugOutputEvents("Consecutive PTO Events", upcomingPtoEvents);
+
+  if (upcomingPtoEvents.length == 0 || upcomingPtoEvents[0].start >= utils.tomorrow) {
+    logger.verbose("Is upcoming PTO, but it doesn't start today, starts on %s", moment(upcomingPtoEvents[0].start).format("YYYY-MM-DD HH:mm:ss"));
+    upcomingPtoEvents = [];
+  }
 
   return upcomingPtoEvents;
 }
@@ -272,7 +277,6 @@ function getConsecutivePtoEvents(allEvents, searchStartDate) {
 function getUpcomingPtoEvents(allEvents, searchStartDate, searchEndDate) {
   // Get all the upcoming PTO events from this calendar that are between
   // searchStartDate and searchEndDate.
-  logger.verbose("getUpcomingPtoEvents. searchStartDate=%s. searchEndDate=%s", searchStartDate.format("YYYY-MM-DD HH:mm:ss"), searchEndDate.format("YYYY-MM-DD HH:mm:ss"));
   var currentEvent = null;
   var currentEventStart = null;
   var currentEventSummary = '';
@@ -282,6 +286,7 @@ function getUpcomingPtoEvents(allEvents, searchStartDate, searchEndDate) {
   for (var k in allEvents) {
     currentEvent = allEvents[k];
     currentEventStart = moment(currentEvent.start);
+    currentEventEnd = moment(currentEvent.end);
     currentEventSummary = currentEvent.summary;
 
     if (
@@ -291,7 +296,7 @@ function getUpcomingPtoEvents(allEvents, searchStartDate, searchEndDate) {
     ) {
       if (currentEvent.rrule != null) { // Do NOT use !== here
         addOccurrencesForRecurringEvent(currentEvent, currentEventStart, kummerRecurringId, allEvents);
-      } else if (currentEventStart >= searchStartDate) {
+      } else if ((currentEventStart >= searchStartDate) || (currentEventStart < searchStartDate && currentEventEnd > searchStartDate)) {
         upcomingPtoEvents.push(currentEvent);
       }
     }
@@ -389,13 +394,14 @@ function addOccurrencesForRecurringEvent(currentEvent, currentEventStart, kummer
 
 function setSlackStatus(slackText, slackEmoji) {
   // Update my Slack status
+
   fetch('https://slack.com/api/users.profile.set', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
       'Authorization': "Bearer " + utils.configuration.slack.token
     },
-    body: format("profile={'status_text': '{0}', 'status_emoji': '{1}'}", slackText, slackEmoji)
+    body: format("profile={{'status_text': '{0}', 'status_emoji': '{1}'}}", slackText, slackEmoji)
   })
   .then(function(result) {
     var resultString = JSON.stringify(result);
