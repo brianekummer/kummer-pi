@@ -201,6 +201,7 @@ function manageCardsPage() {
 	  .wait(until.elementLocated(by.id("cards")), 10000)
     .then(() => {
 			messageToPhone += readTransactionsForCardByNumber(1);
+			
       _driver
 			  .wait(until.elementLocated(by.id("cards")), 10000)
         .then(() => {
@@ -226,31 +227,19 @@ function readTransactionsForCardByNumber(cardNumber) {
   */
 	logger.verbose("IN readTransactionsForCardByNumber(%s)", cardNumber);
 	
-	var xpathQuery = format("//*[@id='cards_data']/tr[{0}]/td[1]/div/div[1]/input", cardNumber);
+	var xpathQuery = format("//*[@id='cards_data']/tr[{0}]/td[1]/div/div[2]/span", cardNumber);
 		
+  _driver.findElement(by.xpath(xpathQuery)).click();
   _driver
-    .findElements(by.xpath(xpathQuery))
-    .then((elements) => {
-      if (elements.length = 0) {
-        // ERROR!!! No cards were found!!!
-				logger.error('IN readTransactionsForCardByNumber(%s) - ERROR: %s', cardNumber, err);
-      } else {
-				// Click the radio button, then click the "Balances/Transactions" button
-				logger.verbose("Found some cards. elements is %s", elements);
-        elements.forEach(e => {
-					logger.verbose("found at least one card %s", e);
-					e.checked = true;
-				  _driver
-				    .findElement(by.id("showCardTransactionsButton")).click()
-					  .then(() => {
-							readCardBalances();
-							
-				      _driver
-				        .findElement(by.id("backButton")).click();
-						});
-				});
-      }
-    });
+	  .wait(until.elementLocated(by.id("showCardTransactionsButton")), 10000)
+    .then(() => {
+      utils.sleep(500);
+    	_driver.findElement(by.id("showCardTransactionsButton")).click();
+			
+			readCardBalances();
+		
+		  _driver.findElement(by.id("backButton")).click();
+	  });
 }
 
 
@@ -283,6 +272,8 @@ function readCardBalances() {
          - click back button (id backButton)
 				 - parse data and build message for phone
 	*/
+	logger.verbose("IN readCardBalances");
+	
 	var cardData = "";
 	var transactions = [];
 	var pageInfo = "";
@@ -290,32 +281,34 @@ function readCardBalances() {
 	_driver
 	  .wait(until.elementLocated(by.id("dataTable_data")), 10000)
     .then(() => {
-		  driver
-		    .findElement(by.id("ui-paginator-current"))
+		  _driver
+		    .findElement(by.className("ui-paginator-current"))
 		    .then((currentPaginator) => {
 				  currentPaginator
-  				  .getInnerHTML()
+  				  .getText()
 					  .then(pageInfo => {
 			        logger.verbose("page info is %s", pageInfo);
 						
 						  // This might be useful
 						  // https://stackoverflow.com/questions/35098156/get-an-array-of-elements-from-findelementby-classname
-						  driver
-						    .findElement(by.id("dataTable_data"))
-							  .then(tableBody => {
-  								var rowNum = 0;
-								  tableBody.forEach(row => {
+						  _driver
+							  // Need to not include canceled transactions, which have the CSS class canceledTransaction
+						    .findElements(by.xpath("//tr[contains(@class, 'ui-widget-content') and not(contains(@class, 'canceledTransaction'))]"))
+							  .then(rows => {
+  								logger.verbose("IN readCardBalances. rows.length is %d", rows.length);
+									var rowNum = 0;
+								  rows.forEach(row => {
          						// element is tbody tag full of rows
 								    logger.verbose("row #%s: ", rowNum);
+										getCardTransaction(rowNum, row);
 								    rowNum ++;
 									});
 									
 									
 									_driver
-									  .findElements(by.class("ui-paginator-next"))
-										.then((elements) => {
-											var brian = elements[0];
-											logger.verbose("next is %s", brian);
+									  .findElement(by.className("ui-paginator-next"))
+										.then((nextPaginator) => {
+											logger.verbose("next is %s", nextPaginator);
 
 											
 											//	return cardData;
@@ -326,6 +319,16 @@ function readCardBalances() {
 		});
 }
 
+
+function getCardTransaction(rowNum, row) {
+  logger.verbose("    IN getCardTransaction(row=%s)", row);
+
+  row
+    .getText()
+    .then(rowText => {
+      logger.verbose("    Row Text=%s", rowText);
+    });
+}
 
 
 function sendBusPassBalancesToBrian(message) {
