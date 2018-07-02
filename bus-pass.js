@@ -149,8 +149,9 @@ logger.info("------------------------------------------------------------");
 	  .then(() => login())
 		.then(() => welcomePage())
 		.then(() => manageCardsPage())
-		.then((message) => sendBusPassBalancesToBrian(message))
-		.then(() => logout());
+		//.then((message) => sendBusPassBalancesToBrian(message))
+		//.then(() => logout())
+		//.then(() => quit());
 return;
 
 
@@ -233,6 +234,7 @@ function readTransactionsForCardByNumber(cardNumber) {
   _driver
 	  .wait(until.elementLocated(by.id("showCardTransactionsButton")), 10000)
     .then(() => {
+			logger.verbose("Found show transactions button");
       utils.sleep(500);
     	_driver.findElement(by.id("showCardTransactionsButton")).click();
 			
@@ -277,13 +279,23 @@ function readCardBalances() {
 	var cardData = "";
 	var transactions = [];
 	var pageInfo = "";
+
+
+  // while not done
+  var readAllPages = false;
 	
+	//while (!readAllPages) {
+		
 	_driver
 	  .wait(until.elementLocated(by.id("dataTable_data")), 10000)
     .then(() => {
+			logger.verbose("Found data table");
 		  _driver
 		    .findElement(by.className("ui-paginator-current"))
 		    .then((currentPaginator) => {
+					
+					// while not done
+					
 				  currentPaginator
   				  .getText()
 					  .then(pageInfo => {
@@ -292,31 +304,38 @@ function readCardBalances() {
 						  // This might be useful
 						  // https://stackoverflow.com/questions/35098156/get-an-array-of-elements-from-findelementby-classname
 						  _driver
-							  // Need to not include canceled transactions, which have the CSS class canceledTransaction
-						    .findElements(by.xpath("//tr[contains(@class, 'ui-widget-content') and not(contains(@class, 'canceledTransaction'))]"))
+							  // Need to not include canceled/invalid/failed transactions, which have the CSS class canceledTransaction
+						    .findElements(by.xpath("//tr[contains(@class, 'ui-widget-content') and not (contains(@class, 'canceledTransaction'))]"))
 							  .then(rows => {
+									// Loop through each row that is not an invalid/canceled/failed transaction
   								logger.verbose("IN readCardBalances. rows.length is %d", rows.length);
 									var rowNum = 0;
 								  rows.forEach(row => {
-         						// element is tbody tag full of rows
 								    logger.verbose("row #%s: ", rowNum);
 										getCardTransaction(rowNum, row);
 								    rowNum ++;
 									});
 									
-									
 									_driver
-									  .findElement(by.className("ui-paginator-next"))
+									  //.findElement(by.className("ui-paginator-next"))
+									  .findElement(by.xpath("//a[contains(@class, 'ui-paginator-next') and not (contains(@class, 'ui-state-disabled'))]"))
 										.then((nextPaginator) => {
-											logger.verbose("next is %s", nextPaginator);
-
-											
-											//	return cardData;
+											var paginatorLength = nextPaginator.length;
+											logger.verbose("NEXT is %s, len=%s", nextPaginator, paginatorLength);
+											if (nextPaginator == null)
+												readAllPages = true;
+											  //	return cardData;
+											else {
+											  nextPaginator.click();
+											  _driver.wait(until.stalenessOf(nextPaginator))
+											}
 										});
 								});
 							});
 				});
 		});
+	//}
+	
 }
 
 
@@ -350,4 +369,17 @@ function logout() {
         _driver.findElement(by.id("sectionNavigation:nav_logout")).click();
       },
       err => logger.error('IN logout - ERROR: %s', err));
+}
+
+
+function quit() {
+  logger.verbose("  IN quit");
+
+  _driver
+	  _driver.wait(until.elementLocated(by.id("LoginButton")), 10000)
+    .then(
+      () => {
+        _driver.quit();
+      },
+      err => logger.error('IN quit - ERROR: %s', err));
 }
