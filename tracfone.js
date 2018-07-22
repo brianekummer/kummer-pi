@@ -619,7 +619,7 @@ function sendToPhones() {
 
   var jacob = utils.configuration.family["jacob"];
   //var jacobData = getFamilyMemberData("Jacob");
-// I'm having JavaScript issues on the phone if I send "*", so I'll send "NA"
+  // I'm having JavaScript issues on the phone if I send "*", so I'll send "NA"
   var jacobData = { Name: "Jacob", TracFoneBalances: [ { Minutes: "NA", Texts: "NA", Mb: "NA" } ] };
 
   var kaley = utils.configuration.family["kaley"];
