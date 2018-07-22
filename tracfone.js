@@ -99,6 +99,7 @@ logger.info("------------------------------------------------------------");
           .configuration
           .family
           .allMembers
+          .filter(fm => fm.phone.tracfone)    // Jacob is not on TracFone
           .forEach(fm =>
             _driver.then(() => getBalances(fm, false))))
         //.then(() => loadPaymentHistory())
@@ -612,21 +613,28 @@ function sendToPhones() {
 
   var brian = utils.configuration.family["brian"];
   var brianData = getFamilyMemberData("Brian");
+
   var jodi = utils.configuration.family["jodi"];
   var jodiData = getFamilyMemberData("Jodi");
+
   var jacob = utils.configuration.family["jacob"];
-  var jacobData = getFamilyMemberData("Jacob");
+  //var jacobData = getFamilyMemberData("Jacob");
+// I'm having JavaScript issues on the phone if I send "*", so I'll send "NA"
+  var jacobData = { Name: "Jacob", TracFoneBalances: [ { Minutes: "NA", Texts: "NA", Mb: "NA" } ] };
+
   var kaley = utils.configuration.family["kaley"];
   var kaleyData = getFamilyMemberData("Kaley");
+
   var home = utils.configuration.family["home"];
   var homeData = getFamilyMemberData("Home");
+
   var pop = utils.configuration.family["pop"];
   var popData = getFamilyMemberData("Pop");
 
   _driver
     .then(() => sendAllBalancesToBrian(brian, [ brianData, jodiData, jacobData, kaleyData, homeData, popData ]))
     .then(() => sendSomeoneTheirBalances(jodi, jodiData))
-    .then(() => sendSomeoneTheirBalances(jacob, jacobData))
+    //.then(() => sendSomeoneTheirBalances(jacob, jacobData))
     .then(() => sendSomeoneTheirBalances(kaley, kaleyData))
     .then(() => sendSomeoneTheirBalances(home, homeData))
     .then(() => sendSomeoneTheirBalances(pop, popData))
