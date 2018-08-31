@@ -238,14 +238,15 @@ function readTransactionsForCardByNumber(cardNumber) {
       utils.sleep(500);
     	_driver.findElement(by.id("showCardTransactionsButton")).click();
 			
-			readCardBalances();
+			var cardData = ""
+			readCardBalances(cardData);
 		
 		  _driver.findElement(by.id("backButton")).click();
 	  });
 }
 
 
-function readCardBalances() {
+function readCardBalances(cardData) {
 	/*
 		 - readCardBalances()
 				- wait for "Card Balance and Transaction History" page
@@ -276,17 +277,10 @@ function readCardBalances() {
 	*/
 	logger.verbose("IN readCardBalances");
 	
-	var cardData = "";
 	var transactions = [];
 	var pageInfo = "";
 
-
-  // while not done
-  var readAllPages = false;
-	
-	//while (!readAllPages) {
-		
-	_driver
+  _driver
 	  .wait(until.elementLocated(by.id("dataTable_data")), 10000)
     .then(() => {
 			logger.verbose("Found data table");
@@ -300,11 +294,10 @@ function readCardBalances() {
   				  .getText()
 					  .then(pageInfo => {
 			        logger.verbose("page info is %s", pageInfo);
-						
-						  // This might be useful
-						  // https://stackoverflow.com/questions/35098156/get-an-array-of-elements-from-findelementby-classname
+							
 						  _driver
-							  // Need to not include canceled/invalid/failed transactions, which have the CSS class canceledTransaction
+
+  							// Need to not include canceled/invalid/failed transactions, which have the CSS class canceledTransaction
 						    .findElements(by.xpath("//tr[contains(@class, 'ui-widget-content') and not (contains(@class, 'canceledTransaction'))]"))
 							  .then(rows => {
 									// Loop through each row that is not an invalid/canceled/failed transaction
@@ -319,17 +312,17 @@ function readCardBalances() {
 									_driver
 									  //.findElement(by.className("ui-paginator-next"))
 									  .findElement(by.xpath("//a[contains(@class, 'ui-paginator-next') and not (contains(@class, 'ui-state-disabled'))]"))
-										.then((nextPaginator) => {
-											var paginatorLength = nextPaginator.length;
-											logger.verbose("NEXT is %s, len=%s", nextPaginator, paginatorLength);
-											if (nextPaginator == null)
-												readAllPages = true;
-											  //	return cardData;
-											else {
-											  nextPaginator.click();
-											  _driver.wait(until.stalenessOf(nextPaginator))
-											}
-										});
+										.then(
+										  nextPaginator => {
+											  var paginatorLength = nextPaginator.length;
+											  logger.verbose("NEXT is %s, len=%s", nextPaginator, paginatorLength);
+											    nextPaginator.click();
+												  _driver.then(() => readCardBalances(cardData));
+											},
+											err => {
+												logger.verbose("DID NOT FIND A NEXT PAGE- WE'RE DONE!");
+											  return cardData;
+											});
 								});
 							});
 				});
@@ -337,6 +330,51 @@ function readCardBalances() {
 	//}
 	
 }
+
+
+
+
+
+
+
+/*
+function readOnePageOfTransactions() {
+	// This might be useful
+	// https://stackoverflow.com/questions/35098156/get-an-array-of-elements-from-findelementby-classname
+
+	_driver
+
+	// Need to not include canceled/invalid/failed transactions, which have the CSS class canceledTransaction
+	.findElements(by.xpath("//tr[contains(@class, 'ui-widget-content') and not (contains(@class, 'canceledTransaction'))]"))
+	.then(rows => {
+		// Loop through each row that is not an invalid/canceled/failed transaction
+		logger.verbose("IN readOnePageOfTransactions. rows.length is %d", rows.length);
+		var rowNum = 0;
+		rows.forEach(row => {
+			logger.verbose("row #%s: ", rowNum);
+			getCardTransaction(rowNum, row);
+			rowNum ++;
+		});
+		
+		_driver
+			.findElement(by.xpath("//a[contains(@class, 'ui-paginator-next') and not (contains(@class, 'ui-state-disabled'))]"))
+			.then((nextPaginator) => {
+				var paginatorLength = nextPaginator.length;
+				logger.verbose("NEXT is %s, len=%s", nextPaginator, paginatorLength);
+				if (nextPaginator == null)
+					//	return cardData;
+				else {
+					nextPaginator.click()
+					wait for page to load 
+					readOnePageOfTransactions();
+					//_driver.wait(until.stalenessOf(nextPaginator))
+				}
+			});
+	});
+
+}
+*/
+
 
 
 function getCardTransaction(rowNum, row) {
