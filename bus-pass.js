@@ -144,7 +144,6 @@ logger.info("------------------------------------------------------------");
 
 
 */	
-	
 	_driver
 	  .then(() => login())
 		.then(() => welcomePage())
@@ -229,6 +228,7 @@ function readTransactionsForCardByNumber(cardNumber) {
 	logger.verbose("IN readTransactionsForCardByNumber(%s)", cardNumber);
 	
 	var xpathQuery = format("//*[@id='cards_data']/tr[{0}]/td[1]/div/div[2]/span", cardNumber);
+	var events = [];
 		
   _driver.findElement(by.xpath(xpathQuery)).click();
   _driver
@@ -239,14 +239,14 @@ function readTransactionsForCardByNumber(cardNumber) {
     	_driver.findElement(by.id("showCardTransactionsButton")).click();
 			
 			var cardData = ""
-			readCardBalances(cardData);
-		
+			readCardBalances(cardData, events);
+			
 		  _driver.findElement(by.id("backButton")).click();
 	  });
 }
 
 
-function readCardBalances(cardData) {
+function readCardBalances(cardData, events) {
 	/*
 		 - readCardBalances()
 				- wait for "Card Balance and Transaction History" page
@@ -274,6 +274,19 @@ function readCardBalances(cardData) {
 					 - use 10 trip ticket: 3=Validation or deduction of SV amount, 4=$0.00, 5=10 Trip Full Zone 2
          - click back button (id backButton)
 				 - parse data and build message for phone
+				 
+				 
+				 
+				 
+		Web page data
+		
+		Monthly Pass
+		   Buy - mm/dd/yy hh:MM AM/PM | xxxxx | issue a new card xxx        | $128.00 | xxx Monthly Pass xxx
+			 Use - mm/dd/yy hh:MM AM/PM | xxxxx | Validation or deduction xxx | $0.00   | xxx Monthly Pass xxx
+		10 trip
+		   Buy - mm/dd/yy hh:MM AM/PM | xxxxx | issue a new card xxx        | $36.00  | xxx 10 Trip xxx
+			 Use - mm/dd/yy hh:MM AM/PM | xxxxx | Validation or deduction xxx | $0.00   | xxx 10 Trip xxx
+				 
 	*/
 	logger.verbose("IN readCardBalances");
 	
@@ -303,24 +316,29 @@ function readCardBalances(cardData) {
 									// Loop through each row that is not an invalid/canceled/failed transaction
   								logger.verbose("IN readCardBalances. rows.length is %d", rows.length);
 									var rowNum = 0;
+									var eventInfo = null;
 								  rows.forEach(row => {
-								    logger.verbose("row #%s: ", rowNum);
-										getCardTransaction(rowNum, row);
+								    logger.verbose("row #%s: ", row);
+										eventInfo = getCardTransaction(rowNum, row);
+										if (eventInfo !== null)
+  										events.push(eventInfo);
 								    rowNum ++;
 									});
-									
+								})
+								.then(() => {
 									_driver
-									  //.findElement(by.className("ui-paginator-next"))
 									  .findElement(by.xpath("//a[contains(@class, 'ui-paginator-next') and not (contains(@class, 'ui-state-disabled'))]"))
 										.then(
 										  nextPaginator => {
 											  var paginatorLength = nextPaginator.length;
 											  logger.verbose("NEXT is %s, len=%s", nextPaginator, paginatorLength);
 											    nextPaginator.click();
-												  _driver.then(() => readCardBalances(cardData));
+												  _driver.then(() => readCardBalances(cardData, events));
 											},
 											err => {
-												logger.verbose("DID NOT FIND A NEXT PAGE- WE'RE DONE!");
+												logger.verbose("DID NOT FIND A NEXT PAGE- WE'RE DONE! EVENTS.LENGTH=%s", events.length);
+												logger.verbose("   SHOULD CALCULATE CARD DATA HERE!");
+												
 											  return cardData;
 											});
 								});
@@ -330,9 +348,6 @@ function readCardBalances(cardData) {
 	//}
 	
 }
-
-
-
 
 
 
@@ -379,12 +394,50 @@ function readOnePageOfTransactions() {
 
 function getCardTransaction(rowNum, row) {
   logger.verbose("    IN getCardTransaction(row=%s)", row);
-
+  var eventInfo = {};
+	
   row
     .getText()
     .then(rowText => {
-      logger.verbose("    Row Text=%s", rowText);
+      logger.verbose("row #%s: ", rowText);
+			eventInfo = parseRow(rowText);
+			if (eventInfo == null)
+        logger.verbose("    Row Text=%s >>> NO EVENT", rowText);
+			else
+        logger.verbose("    Row Text=%s >>> %s %s %s", rowText, eventInfo.dateTime.format("MM/DD/YYYY hh:mm A"), eventInfo.action, eventInfo.passType);
+			
+			return eventInfo;
     });
+}
+
+
+function parseRow(rowText) {
+	/*
+	  Monthly
+			   Buy - mm/dd/yy hh:MM AM/PM | xxxxx | issue a new card xxx        | $128.00 | xxx Monthly Pass xxx
+			 Use - mm/dd/yy hh:MM AM/PM | xxxxx | Validation or deduction xxx | $0.00   | xxx Monthly Pass xxx
+		10 trip
+		   Buy - mm/dd/yy hh:MM AM/PM | xxxxx | issue a new card xxx        | $36.00  | xxx 10 Trip xxx
+			 Use - mm/dd/yy hh:MM AM/PM | xxxxx | Validation or deduction xxx | $0.00   | xxx 10 Trip xxx
+   */
+	 var eventInfo = {
+		 dateTime: moment(rowText.substr(0,16), "MM/DD/YY hh:mm A")
+	 };
+	 
+	 if (rowText.match(/issue a new card/i))
+		 eventInfo.action = "purchased"
+	 else if (rowText.match(/validation or deduction/i))
+		 eventInfo.action = "used";
+	 
+	 if (rowText.match(/monthly pass/i))
+		 eventInfo.passType = "monthly"
+	 else if (rowText.match(/10 trip/i))
+		 eventInfo.passType = "10 trip";
+	 
+	 if (eventInfo.action == undefined || eventInfo.passType == undefined)
+		 eventInfo = null;
+	 
+	 return eventInfo;
 }
 
 
