@@ -326,13 +326,13 @@ function readCardBalances(events) {
 											.findElement(by.xpath("//a[contains(@class, 'ui-paginator-next') and not (contains(@class, 'ui-state-disabled'))]"))
 											.then(
 												nextPaginator => {
-													var paginatorLength = nextPaginator.length;
-													logger.verbose("NEXT is %s, len=%s", nextPaginator, paginatorLength);
 													nextPaginator.click();
 													_driver.then(() => resolve(readCardBalances(events)));
 												},
 												err => {
 													logger.verbose("DID NOT FIND A NEXT PAGE- WE'RE DONE! EVENTS.LENGTH=%s", events.length);
+													logger.verbose("   SHOULD CALCULATE CARD DATA HERE!");
+													
 													resolve(calculatePhoneMessage(events));
 												});
 									});
@@ -344,7 +344,6 @@ function readCardBalances(events) {
 
 
 function getCardTransaction(row, events) {
-  
   row
     .getText()
     .then(rowText => parseRow(rowText, events));
