@@ -148,9 +148,9 @@ logger.info("------------------------------------------------------------");
 	  .then(() => login())
 		.then(() => welcomePage())
 		.then(() => manageCardsPage())
-		//.then((message) => sendBusPassBalancesToBrian(message))
-		//.then(() => logout())
-		//.then(() => quit());
+		.then((message) => sendBusPassBalancesToBrian(message))
+		.then(() => logout())
+		.then(() => quit());
 return;
 
 
@@ -166,7 +166,6 @@ function login() {
   _driver.wait(until.elementLocated(by.id("LoginButton")), 10000)
     .then(
       () => {
-        //utils.sleep(500);
         _driver.findElement(by.id("EMAIL")).sendKeys(utils.configuration.buspass.username);
         _driver.findElement(by.id("PASSWORD")).sendKeys(utils.configuration.buspass.password);
         _driver.findElement(by.id("LoginButton")).click();
@@ -180,7 +179,6 @@ function welcomePage() {
   _driver.wait(until.elementLocated(by.id("sectionNavigation:nav_listCards")), 10000)
     .then(
       () => {
-        //utils.sleep(500);
         _driver.findElement(by.id("sectionNavigation:nav_listCards")).click();
       },
       (err) => logger.error('IN welcomePage - ERROR: %s', err));
@@ -188,28 +186,31 @@ function welcomePage() {
 
 
 function manageCardsPage() {
-	/*
-   - manageCardsPage()
-		  - wait for "Manage cards" page
-			- readTransactionsForCardByNumber(1)
-	    - wait for "Manage cards" page
-      - readTransactionsForCardByNumber(2)
-  */
-	var messageToPhone = format("bus_pass|{0}|{1}|", moment().format("YYYYMMDDHHmmss"), getFormattedRunDate());
+	return new Promise((resolve, reject) => {
+		var messageToPhone = format("bus_pass|{0}|{1}|", moment().format("YYYYMMDDHHmmss"), getFormattedRunDate());
 
-  _driver
-	  .wait(until.elementLocated(by.id("cards")), 10000)
-    .then(() => {
-			messageToPhone += readTransactionsForCardByNumber(1);
-			
-      _driver
-			  .wait(until.elementLocated(by.id("cards")), 10000)
-        .then(() => {
-			    messageToPhone += readTransactionsForCardByNumber(2);
-
-        	return messageToPhone;
-				});
-		});
+		_driver
+			.wait(until.elementLocated(by.id("cards")), 10000)
+			.then(() => {
+				return readTransactionsForCardByNumber(1); 
+			})
+			.then((cardData) => {
+				logger.verbose("MANAGE CARDS PAGE #1. msg=%s", cardData);
+				messageToPhone += cardData;
+				
+				_driver
+					.wait(until.elementLocated(by.id("cards")), 10000);
+			})
+			.then(() => {
+				return readTransactionsForCardByNumber(2); 
+			})
+			.then((cardData) => {
+				messageToPhone += format("|{0}|", cardData);
+				logger.verbose("MANAGE CARDS PAGE #2. cardData=%s, msgToPhone=%s", cardData, messageToPhone);
+				
+				resolve(messageToPhone);
+			});
+	});
 }
 
 
@@ -225,28 +226,34 @@ function readTransactionsForCardByNumber(cardNumber) {
          - click back button (id backButton)
 				 - parse data and build message for phone
   */
-	logger.verbose("IN readTransactionsForCardByNumber(%s)", cardNumber);
-	
-	var xpathQuery = format("//*[@id='cards_data']/tr[{0}]/td[1]/div/div[2]/span", cardNumber);
-	var events = [];
+	return new Promise((resolve, reject) => {
+		logger.verbose("IN readTransactionsForCardByNumber(%s)", cardNumber);
 		
-  _driver.findElement(by.xpath(xpathQuery)).click();
-  _driver
-	  .wait(until.elementLocated(by.id("showCardTransactionsButton")), 10000)
-    .then(() => {
-			logger.verbose("Found show transactions button");
-      utils.sleep(500);
-    	_driver.findElement(by.id("showCardTransactionsButton")).click();
+		var xpathQuery = format("//*[@id='cards_data']/tr[{0}]/td[1]/div/div[2]/span", cardNumber);
+		var events = [];
 			
-			var cardData = ""
-			readCardBalances(cardData, events);
-			
-		  _driver.findElement(by.id("backButton")).click();
-	  });
+		_driver.findElement(by.xpath(xpathQuery)).click();
+		_driver
+			.wait(until.elementLocated(by.id("showCardTransactionsButton")), 10000)
+			.then(() => {
+				logger.verbose("Found show transactions button");
+				utils.sleep(500);
+				_driver.findElement(by.id("showCardTransactionsButton")).click();
+				
+				return readCardBalances(events);
+			})
+			.then((cardData) => {
+				logger.verbose("IN readTransactionsForCardByNumber(%s), cardData=%s", cardNumber, cardData);
+				
+				_driver.findElement(by.id("backButton")).click();
+				
+				resolve(cardData);
+			});
+	});
 }
 
 
-function readCardBalances(cardData, events) {
+function readCardBalances(events) {
 	/*
 		 - readCardBalances()
 				- wait for "Card Balance and Transaction History" page
@@ -288,165 +295,136 @@ function readCardBalances(cardData, events) {
 			 Use - mm/dd/yy hh:MM AM/PM | xxxxx | Validation or deduction xxx | $0.00   | xxx 10 Trip xxx
 				 
 	*/
-	logger.verbose("IN readCardBalances");
-	
-	var transactions = [];
-	var pageInfo = "";
-
-  _driver
-	  .wait(until.elementLocated(by.id("dataTable_data")), 10000)
-    .then(() => {
-			logger.verbose("Found data table");
-		  _driver
-		    .findElement(by.className("ui-paginator-current"))
-		    .then((currentPaginator) => {
-					
-					// while not done
-					
-				  currentPaginator
-  				  .getText()
-					  .then(pageInfo => {
-			        logger.verbose("page info is %s", pageInfo);
-							
-						  _driver
-
-  							// Need to not include canceled/invalid/failed transactions, which have the CSS class canceledTransaction
-						    .findElements(by.xpath("//tr[contains(@class, 'ui-widget-content') and not (contains(@class, 'canceledTransaction'))]"))
-							  .then(rows => {
-									// Loop through each row that is not an invalid/canceled/failed transaction
-  								logger.verbose("IN readCardBalances. rows.length is %d", rows.length);
-									var rowNum = 0;
-									var eventInfo = null;
-								  rows.forEach(row => {
-								    logger.verbose("row #%s: ", row);
-										eventInfo = getCardTransaction(rowNum, row);
-										if (eventInfo !== null)
-  										events.push(eventInfo);
-								    rowNum ++;
-									});
-								})
-								.then(() => {
-									_driver
-									  .findElement(by.xpath("//a[contains(@class, 'ui-paginator-next') and not (contains(@class, 'ui-state-disabled'))]"))
-										.then(
-										  nextPaginator => {
-											  var paginatorLength = nextPaginator.length;
-											  logger.verbose("NEXT is %s, len=%s", nextPaginator, paginatorLength);
-											    nextPaginator.click();
-												  _driver.then(() => readCardBalances(cardData, events));
-											},
-											err => {
-												logger.verbose("DID NOT FIND A NEXT PAGE- WE'RE DONE! EVENTS.LENGTH=%s", events.length);
-												logger.verbose("   SHOULD CALCULATE CARD DATA HERE!");
-												
-											  return cardData;
-											});
-								});
-							});
-				});
-		});
-	//}
-	
-}
-
-
-
-
-/*
-function readOnePageOfTransactions() {
-	// This might be useful
-	// https://stackoverflow.com/questions/35098156/get-an-array-of-elements-from-findelementby-classname
-
-	_driver
-
-	// Need to not include canceled/invalid/failed transactions, which have the CSS class canceledTransaction
-	.findElements(by.xpath("//tr[contains(@class, 'ui-widget-content') and not (contains(@class, 'canceledTransaction'))]"))
-	.then(rows => {
-		// Loop through each row that is not an invalid/canceled/failed transaction
-		logger.verbose("IN readOnePageOfTransactions. rows.length is %d", rows.length);
-		var rowNum = 0;
-		rows.forEach(row => {
-			logger.verbose("row #%s: ", rowNum);
-			getCardTransaction(rowNum, row);
-			rowNum ++;
-		});
+	return new Promise((resolve, reject) => {
+		logger.verbose("IN readCardBalances");
 		
+		var transactions = [];
+		var pageInfo = "";
+
 		_driver
-			.findElement(by.xpath("//a[contains(@class, 'ui-paginator-next') and not (contains(@class, 'ui-state-disabled'))]"))
-			.then((nextPaginator) => {
-				var paginatorLength = nextPaginator.length;
-				logger.verbose("NEXT is %s, len=%s", nextPaginator, paginatorLength);
-				if (nextPaginator == null)
-					//	return cardData;
-				else {
-					nextPaginator.click()
-					wait for page to load 
-					readOnePageOfTransactions();
-					//_driver.wait(until.stalenessOf(nextPaginator))
-				}
+			.wait(until.elementLocated(by.id("dataTable_data")), 10000)
+			.then(() => {
+				logger.verbose("Found data table");
+				_driver
+					.findElement(by.className("ui-paginator-current"))
+					.then((currentPaginator) => {
+						currentPaginator
+							.getText()
+							.then(pageInfo => {
+								logger.verbose("page info is %s", pageInfo);
+								
+								_driver
+									// Need to not include canceled/invalid/failed transactions, which have the CSS class canceledTransaction
+									.findElements(by.xpath("//tr[contains(@class, 'ui-widget-content') and not (contains(@class, 'canceledTransaction'))]"))
+									.then(rows => {
+										// Loop through each row that is not an invalid/canceled/failed transaction
+										logger.verbose("IN readCardBalances. rows.length is %d", rows.length);
+										rows.forEach(row => getCardTransaction(row, events));
+									})
+									.then(() => {
+										_driver
+											.findElement(by.xpath("//a[contains(@class, 'ui-paginator-next') and not (contains(@class, 'ui-state-disabled'))]"))
+											.then(
+												nextPaginator => {
+													var paginatorLength = nextPaginator.length;
+													logger.verbose("NEXT is %s, len=%s", nextPaginator, paginatorLength);
+													nextPaginator.click();
+													_driver.then(() => resolve(readCardBalances(events)));
+												},
+												err => {
+													logger.verbose("DID NOT FIND A NEXT PAGE- WE'RE DONE! EVENTS.LENGTH=%s", events.length);
+													resolve(calculatePhoneMessage(events));
+												});
+									});
+								});
+					});
 			});
-	});
-
+	});	
 }
-*/
 
 
-
-function getCardTransaction(rowNum, row) {
-  logger.verbose("    IN getCardTransaction(row=%s)", row);
-  var eventInfo = {};
-	
+function getCardTransaction(row, events) {
+  
   row
     .getText()
-    .then(rowText => {
-      logger.verbose("row #%s: ", rowText);
-			eventInfo = parseRow(rowText);
-			if (eventInfo == null)
-        logger.verbose("    Row Text=%s >>> NO EVENT", rowText);
-			else
-        logger.verbose("    Row Text=%s >>> %s %s %s", rowText, eventInfo.dateTime.format("MM/DD/YYYY hh:mm A"), eventInfo.action, eventInfo.passType);
-			
-			return eventInfo;
-    });
+    .then(rowText => parseRow(rowText, events));
 }
 
 
-function parseRow(rowText) {
+function parseRow(rowText, events) {
 	/*
 	  Monthly
-			   Buy - mm/dd/yy hh:MM AM/PM | xxxxx | issue a new card xxx        | $128.00 | xxx Monthly Pass xxx
+			 Buy - mm/dd/yy hh:MM AM/PM | xxxxx | issue a new card xxx        | $128.00 | xxx Monthly Pass xxx
 			 Use - mm/dd/yy hh:MM AM/PM | xxxxx | Validation or deduction xxx | $0.00   | xxx Monthly Pass xxx
 		10 trip
 		   Buy - mm/dd/yy hh:MM AM/PM | xxxxx | issue a new card xxx        | $36.00  | xxx 10 Trip xxx
 			 Use - mm/dd/yy hh:MM AM/PM | xxxxx | Validation or deduction xxx | $0.00   | xxx 10 Trip xxx
-   */
-	 var eventInfo = {
-		 dateTime: moment(rowText.substr(0,16), "MM/DD/YY hh:mm A")
-	 };
-	 
-	 if (rowText.match(/issue a new card/i))
-		 eventInfo.action = "purchased"
-	 else if (rowText.match(/validation or deduction/i))
-		 eventInfo.action = "used";
-	 
-	 if (rowText.match(/monthly pass/i))
-		 eventInfo.passType = "monthly"
-	 else if (rowText.match(/10 trip/i))
-		 eventInfo.passType = "10 trip";
-	 
-	 if (eventInfo.action == undefined || eventInfo.passType == undefined)
-		 eventInfo = null;
-	 
-	 return eventInfo;
+  */
+	var eventInfo = {
+	  dateTime: moment(rowText.substr(0,16), "MM/DD/YY hh:mm A"),
+	  action:   rowText.match(/issue a new card/i) ? "purchased" :
+	            rowText.match(/deduction/i) ? "used" :
+		          null,
+	  passType: rowText.match(/monthly pass/i) ? "monthly" :
+	            rowText.match(/10 trip/i) ? "10 trip" :
+		          null
+	};
+	
+	if (eventInfo.action != null && eventInfo.passType != null) {
+    logger.verbose("    Row Text=%s >>> %s %s %s", rowText, eventInfo.dateTime.format("MM/DD/YYYY hh:mm A"), eventInfo.action, eventInfo.passType);
+		events.push(eventInfo);
+  } else {
+    logger.verbose("    Row Text=%s >>> NO EVENT", rowText);
+	}
+}
+
+
+function calculatePhoneMessage(events) {
+	// ASSUMES array is sorted with most recent records FIRST
+	var cardData = "";
+	
+	var latestPurchaseIndex = events.findIndex(e => e.action === "purchased");
+	var latestPurchase = events[latestPurchaseIndex];
+	
+	// Remove all items in array after the latest purchase, leaving only 
+	// elements that happened after the purchase.
+	events.splice(latestPurchaseIndex, events.length-latestPurchaseIndex-1);
+
+  switch(latestPurchase.passType) {
+	  case "monthly":
+			var passForMonth = null;
+			if (latestPurchase.dateTime.date() > 7) {
+				// Pass was purchased for the next month
+				passForMonth = latestPurchase.dateTime.add(1, "month");
+			} else {
+				// Pass was purchased for the month it was purchased in
+				passForMonth = latestPurchase.dateTime;
+			}
+			cardData = (moment() < passForMonth.endOf("month")) 
+				? passForMonth.format("MMM")
+				: null;
+		  break;
+		case "10 trip":
+			var tripsUsed = events.filter(e => e.action === "used" && e.passType === "10 trip").length;
+			var tripsRemaining = 10 - tripsUsed;
+			
+			cardData = tripsRemaining + " left";
+		  break;
+	}
+
+	logger.verbose("CALC CARD DATA- %s", cardData);
+	return cardData;
 }
 
 
 function sendBusPassBalancesToBrian(message) {
-  _driver
-    .then(() => {
-      utils.sendMessageToPhone(utils.configuration.family["brian"], message);
-      logger.info("SENT bus pass balances to %s: %s", "Brian", message);
-    });
+	logger.verbose("WIll send this to my phone: %s", message);
+	
+  //_driver
+  //  .then(() => {
+  //    utils.sendMessageToPhone(utils.configuration.family["brian"], message);
+  //    logger.info("SENT bus pass balances to %s: %s", "Brian", message);
+  //  });
 }
 
 
