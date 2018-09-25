@@ -37,8 +37,6 @@
 //                   npm install selenium-webdriver
 // - MomentJS........For date logic
 //                   npm install moment
-// - File system.....For reading/writing files
-//                   npm install file-system
 // - String format...To simplify formatting strings in JavaScript
 //                   npm install string-format
 // - Winston.........A logging framework
@@ -62,7 +60,6 @@ var webdriver = require("selenium-webdriver"),
     by = webdriver.By,
     until = webdriver.until;
 var moment = require("moment");
-var fs = require("fs");
 var format = require("string-format");
 var logger = require("winston");
 var path = require("path");
@@ -148,7 +145,7 @@ logger.info("------------------------------------------------------------");
 	  .then(() => login())
 		.then(() => welcomePage())
 		.then(() => manageCardsPage())
-		.then((message) => sendBusPassBalancesToBrian(message))
+		.then(message => sendBusPassBalancesToBrian(message))
 		.then(() => logout())
 		.then(() => quit());
 return;
@@ -163,7 +160,8 @@ function login() {
   logger.verbose("IN login");
 	
   _driver.get(utils.configuration.buspass.url);
-  _driver.wait(until.elementLocated(by.id("LoginButton")), 10000)
+  _driver
+	  .wait(until.elementLocated(by.id("LoginButton")), 10000)
     .then(
       () => {
         _driver.findElement(by.id("EMAIL")).sendKeys(utils.configuration.buspass.username);
@@ -176,7 +174,8 @@ function login() {
 
 
 function welcomePage() {
-  _driver.wait(until.elementLocated(by.id("sectionNavigation:nav_listCards")), 10000)
+  _driver
+	  .wait(until.elementLocated(by.id("sectionNavigation:nav_listCards")), 10000)
     .then(
       () => {
         _driver.findElement(by.id("sectionNavigation:nav_listCards")).click();
@@ -230,10 +229,10 @@ function readTransactionsForCardByNumber(cardNumber) {
 	return new Promise((resolve, reject) => {
 		logger.verbose("IN readTransactionsForCardByNumber(%s)", cardNumber);
 		
-		var xpathQuery = format("//*[@id='cards_data']/tr[{0}]/td[1]/div/div[2]/span", cardNumber);
+		var xpathCard = format("//*[@id='cards_data']/tr[{0}]/td[1]/div/div[2]/span", cardNumber);
 		var events = [];
 			
-		_driver.findElement(by.xpath(xpathQuery)).click();
+		_driver.findElement(by.xpath(xpathCard)).click();
 		_driver
 			.wait(until.elementLocated(by.id("showCardTransactionsButton")), 10000)
 			.then(() => {
@@ -241,7 +240,7 @@ function readTransactionsForCardByNumber(cardNumber) {
 				utils.sleep(500);
 				_driver.findElement(by.id("showCardTransactionsButton")).click();
 				
-				return readCardBalances(events);
+				return readCardBalances(events, 1);
 			})
 			.then(cardData => {
 				logger.verbose("IN readTransactionsForCardByNumber(%s), cardData=%s", cardNumber, cardData);
@@ -254,7 +253,7 @@ function readTransactionsForCardByNumber(cardNumber) {
 }
 
 
-function readCardBalances(events) {
+function readCardBalances(events, pageNumber) {
 	/*
 		 - readCardBalances()
 				- wait for "Card Balance and Transaction History" page
@@ -297,114 +296,41 @@ function readCardBalances(events) {
 				 
 	*/
 	return new Promise((resolve, reject) => {
-		logger.verbose("IN readCardBalances");
+		logger.verbose("IN readCardBalances for page %s", pageNumber);
 		
-		var transactions = [];
-		var pageInfo = "";
-
+		var xpathPaginator = format("//*[text()[contains(.,'({0} of ')]]", pageNumber);
+    var xpathDesiredTransactions = "//tr[contains(@class, 'ui-widget-content') and not (contains(@class, 'canceledTransaction'))]";
+		var xpathNextPageButton = "//a[contains(@class, 'ui-paginator-next') and not (contains(@class, 'ui-state-disabled'))]";
+		
 		_driver
-			.wait(until.elementLocated(by.id("dataTable_data")), 10000)
-			.then(
-				() => {
-					logger.verbose("  Found data table");
-					return _driver.findElement(by.className("ui-paginator-current"));
-				},
-				err => {
-					logger.verbose(">>>>> #1 %s", err);
-				}
-			)
-			.then(
-				currentPaginator => {
-					logger.verbose("  Found paginator");
-					return currentPaginator.getText();
-				},
-				err => {
-					logger.verbose(">>>>> #2 %s", err);
-				}
-			)
-			.then(
-				pageInfo => {
-					// Why is this sometimes wrong??
-					logger.verbose("    Page info is ==> %s", pageInfo);
-					return _driver
-						// Need to not include canceled/invalid/failed transactions, which have the CSS class canceledTransaction
-						.findElements(by.xpath("//tr[contains(@class, 'ui-widget-content') and not (contains(@class, 'canceledTransaction'))]"));
-				},
-				err => {
-					logger.verbose(">>>>> #3 %s", err);
-				}
-			)
-			.then(rows => {
-				// Loop through each row that is not an invalid/canceled/failed transaction
-				logger.verbose("  Found rows ==> rows.length is %d", rows.length);
-				
-				//utils.sleep(1000);   // doesn't help
-				
-				//rows.map(e => e.getText().then(rowText => rowTexts.push(rowText)));
-				//return rowTexts;
-				
-				var rowTexts = [];
-				rows.forEach(e => {
-					logger.verbose("    Adding row to queue to read text");
-					//utils.sleep(1000);
-					rowTexts.push(e.getText());
-				});
-				return Promise.all(rowTexts);
-				
-				//for (var i=0; i < rows.length; i++) {
-				//	logger.verbose("Going to read row #%s", i);
-				//	rows[i].getText().then(rowText => parseRow(rowText, events));
-				//};
-				
-				},
-				err => {
-					logger.verbose("ERROR >>>>>>>>>>>>>>>>>>> %s, %s", events.length, err);
-				})
-			.then(rowTexts => {
-				logger.verbose("  Going to loop through rows");
-				rowTexts.forEach(rowText => parseRow(rowText, events));
-			})
-			
+			.wait(until.elementLocated(by.xpath(xpathPaginator)), 10000)
 			.then(() => {
-				logger.verbose("  Looking for button to go to next page");
-				//utils.sleep(2000);
-				return _driver.findElement(by.xpath("//a[contains(@class, 'ui-paginator-next') and not (contains(@class, 'ui-state-disabled'))]"));
+				return _driver.findElement(by.className("ui-paginator-current"));
+			})
+			.then(currentPaginator => {
+				return currentPaginator.getText();
+			})
+			.then(pageXofY => {
+				logger.verbose("  %s", pageXofY);
+				
+				// Need to not include canceled/invalid/failed transactions, which have the CSS class canceledTransaction
+				return _driver.findElements(by.xpath(xpathDesiredTransactions));
+			})
+			.then(rows => {
+				rows.map(row => row.getText().then(rowText => parseRow(rowText, events)));
+				return _driver.findElement(by.xpath(xpathNextPageButton));
 			})
 			.then(
 				nextPaginator => {
-					logger.verbose("    Found button for next page");
 					nextPaginator.click();
-					
-					
-					utils.sleep(1000);
-					// wait for next label
-					
-					
-					_driver.then(() => resolve(readCardBalances(events)));
+					_driver.then(() => resolve(readCardBalances(events, pageNumber+1)));
 				},
 				err => {
-					logger.verbose("  DID NOT FIND A NEXT PAGE- WE'RE DONE! Ready to calc data. EVENTS.LENGTH=%s >>> %s", events.length, err);
-					
-					//rowTexts.forEach(rowText => parseRow(rowText, events));
 					resolve(calculatePhoneMessage(events));
 			});
-					
 	});	
 }
 
-
-
-
-/*
-function getCardTransaction(row, events) {
-  row
-    .getText()
-    .then(rowText => {
-			parseRow(rowText, events); 
-			//_driver.navigate().back();
-		});
-}
-*/
 
 function parseRow(rowText, events) {
 	/*
@@ -415,7 +341,6 @@ function parseRow(rowText, events) {
 		   Buy - mm/dd/yy hh:MM AM/PM | xxxxx | issue a new card xxx        | $36.00  | xxx 10 Trip xxx
 			 Use - mm/dd/yy hh:MM AM/PM | xxxxx | Validation or deduction xxx | $0.00   | xxx 10 Trip xxx
   */
-	logger.verbose("    Parsing row %s", rowText);
 	var eventInfo = {
 	  dateTime: moment(rowText.substr(0,16), "MM/DD/YY hh:mm A"),
 	  action:   rowText.match(/issue a new card/i) ? "purchased" :
@@ -427,10 +352,10 @@ function parseRow(rowText, events) {
 	};
 	
 	if (eventInfo.action != null && eventInfo.passType != null) {
-    logger.verbose("      Row Text=%s >>> %s %s %s", rowText, eventInfo.dateTime.format("MM/DD/YYYY hh:mm A"), eventInfo.action, eventInfo.passType);
+    logger.verbose("    %s %s pass @ %s", eventInfo.action[0].toUpperCase() + eventInfo.action.substring(1), eventInfo.passType, eventInfo.dateTime.format("MM/DD/YYYY hh:mm A"));
 		events.push(eventInfo);
   } else {
-    logger.verbose("      Row Text=%s >>> NO EVENT", rowText);
+    logger.verbose("    >>> No useful event: %s", rowText);
 	}
 }
 
