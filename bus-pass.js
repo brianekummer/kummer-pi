@@ -67,6 +67,18 @@ var utils = require(path.join(__dirname, "kummer-utils.js"));
 
 utils.configureLogger(logger, __filename);
 
+var xpathQueries = {
+	cards: {
+		cardNumber: "//*[@id='cards_data']/tr[{0}]/td[1]/div/div[2]/span"
+	},
+	balances: {
+		paginator: "//*[text()[contains(.,'({0} of ')]]",
+    desiredTransactions: "//tr[contains(@class, 'ui-widget-content') and not (contains(@class, 'canceledTransaction'))]",
+		nextPageButton: "//a[contains(@class, 'ui-paginator-next') and not (contains(@class, 'ui-state-disabled'))]"
+	}
+};
+
+
 // Define an uncaughtException error handler to log if something really bad happens
 function uncaughtExceptionHandler(options, err) {
   logger.error("%s", err.stack);
@@ -79,73 +91,12 @@ logger.info("------------------------------------------------------------");
   logger.verbose("STARTING");
 
   var _driver = utils.getWebDriver();
-  var _tempData = null;
 
-	
-/*
-   general strategy:
-	 - message to phone:
-	   syntax: bus_pass|date_time|card_1_name|card_1_number_last_4_digits|card_1_result|card_2_name|card_2_number_last_4_digits|card_2_result|
-	   example: bus_pass|20180610121811|Brian|...1234|JUNE|Brian #2|...4567|5 trips left|
-		 
-	 - init variables
-	 - login()
-	    - navigate to login page - https://manage.connectcard.org/selfservice/pages/public/loginIV.jsf
-	       - wait for login page to load 
-	       - enter user id, pwd (ids EMAIL and PASSWORD)
-         - click login button (id LoginButton)
-	 - welcomePage()
-	    - wait for "welcome" page
-	    - click option to list cards (id sectionNavigation:nav_listCards)
-   - manageCardsPage()
-		  - wait for "Manage cards" page
-			- readTransactionsForCardByName(cardName) eg "Brian"
-			   - search table rows for "Brian" (cards:0:cardAliasInput) and select radio button
-         - Check radio button using   $x("//*[@id='cards_data']/tr[xxx]/td[1]/div/div[1]/input")[0].checked = true
-   				 where xxx = 1 for 1st row (Brian #2 ...685), 2 for second row (Brian ...453)
-         - Click "Balance/Transactions" button (id showCardTransactionsButton)
-	       
-				 - readCardBalances()
-				    - wait for "Card Balance and Transaction History" page
-				       - set list of transactions = []
-				       - get total number of pages from "class=ui-paginator-current" (ie "(x of y)")
-			         - for loop through all y pages "(x of y)"
-				       - for each row in tbody //*[@id="dataTable_data"]
-			            - read a line and append to array
-			 	          - table row 
-                     - col 1 = mm/dd/yyyy hh:mm AM/PM
-                     - col 2 = bus id
-                     - col 3 = action 
-                     - col 4 = $ amt
-                     - col 5 = transaction
-						   - end loop
-				       - navigate to next page
-						      - Find href with class="ui-paginator-next"
-                  - If it does NOT have class="ui-state-disabled" then click it
-			      - end loop
-				 
-				    - Examples
-               - Buy month pass: 3=issue a new card / ticket, 4=$128.00, 5=WCTA Full Fare Monthly Pass 2 Zones
-               - use monthly pass: 3=Validation or deduction of SV amount, 4=$0.00, 5=Monthly Pass Full Zone 2
-               - buy 10 trip ticket: 3=issue a new card / ticket, 4=$36.00, 5=WCTA 10 Trip Full 2 Zones
-               - use 10 trip ticket: 3=Validation or deduction of SV amount, 4=$0.00, 5=10 Trip Full Zone 2
-         - click back button (id backButton)
-				 - parse data and build message for phone
-
-	    - wait for "Manage cards" page
-	       - readTransactionsForCardByName("Brian #2")
-	 - logout()
-	    -click logOut button (id sectionNavigation:nav_logout)
-
-	 - send message to phone
-
-
-*/	
 	_driver
 	  .then(() => login())
 		.then(() => welcomePage())
 		.then(() => manageCardsPage())
-		.then(message => sendBusPassBalancesToBrian(message))
+		.then(message => sendBalancesToPhone(message))
 		.then(() => logout())
 		.then(() => quit());
 return;
@@ -157,8 +108,6 @@ function getFormattedRunDate() {
 
 
 function login() {
-  logger.verbose("IN login");
-	
   _driver.get(utils.configuration.buspass.url);
   _driver
 	  .wait(until.elementLocated(by.id("LoginButton")), 10000)
@@ -168,7 +117,7 @@ function login() {
         _driver.findElement(by.id("PASSWORD")).sendKeys(utils.configuration.buspass.password);
         _driver.findElement(by.id("LoginButton")).click();
       },
-      err => logger.error('IN login - ERROR: %s', err)
+      err => logger.error('Login error: %s', err)
 		);
 }
 
@@ -180,14 +129,16 @@ function welcomePage() {
       () => {
         _driver.findElement(by.id("sectionNavigation:nav_listCards")).click();
       },
-      err => logger.error('IN welcomePage - ERROR: %s', err)
+      err => logger.error('Welcome page error: %s', err)
 		);
 }
 
 
 function manageCardsPage() {
 	return new Promise((resolve, reject) => {
-		var messageToPhone = format("bus_pass|{0}|{1}|", moment().format("YYYYMMDDHHmmss"), getFormattedRunDate());
+		var messageToPhone = format("bus_pass|{0}|{1}|", 
+			moment().format("YYYYMMDDHHmmss"), 
+			getFormattedRunDate());
 
 		_driver
 			.wait(until.elementLocated(by.id("cards")), 10000)
@@ -195,7 +146,6 @@ function manageCardsPage() {
 				return readTransactionsForCardByNumber(1); 
 			})
 			.then(cardData => {
-				logger.verbose("MANAGE CARDS PAGE #1. msg=%s", cardData);
 				messageToPhone += cardData;
 				
 				_driver
@@ -206,7 +156,6 @@ function manageCardsPage() {
 			})
 			.then(cardData => {
 				messageToPhone += format("|{0}|", cardData);
-				logger.verbose("MANAGE CARDS PAGE #2. cardData=%s, msgToPhone=%s", cardData, messageToPhone);
 				
 				resolve(messageToPhone);
 			});
@@ -215,38 +164,21 @@ function manageCardsPage() {
 
 
 function readTransactionsForCardByNumber(cardNumber) {
-	/*
-			- readTransactionsForCardByName(cardName) eg "Brian"
-			   - search table rows for "Brian" (cards:0:cardAliasInput) and select radio button
-         - Check radio button using   $x("//*[@id='cards_data']/tr[xxx]/td[1]/div/div[1]/input")[0].checked = true
-   				 where xxx = 1 for 1st row (Brian #2 ...685), 2 for second row (Brian ...453)
-         - Click "Balance/Transactions" button (id showCardTransactionsButton)
-	       
-				 - readCardBalances()
-         - click back button (id backButton)
-				 - parse data and build message for phone
-  */
 	return new Promise((resolve, reject) => {
 		logger.verbose("IN readTransactionsForCardByNumber(%s)", cardNumber);
 		
-		var xpathCard = format("//*[@id='cards_data']/tr[{0}]/td[1]/div/div[2]/span", cardNumber);
 		var events = [];
 			
-		_driver.findElement(by.xpath(xpathCard)).click();
+		_driver.findElement(by.xpath(format(xpathQueries.cards.cardNumber, cardNumber))).click();
 		_driver
 			.wait(until.elementLocated(by.id("showCardTransactionsButton")), 10000)
 			.then(() => {
-				logger.verbose("Found show transactions button");
 				utils.sleep(500);
 				_driver.findElement(by.id("showCardTransactionsButton")).click();
-				
 				return readCardBalances(events, 1);
 			})
 			.then(cardData => {
-				logger.verbose("IN readTransactionsForCardByNumber(%s), cardData=%s", cardNumber, cardData);
-				
 				_driver.findElement(by.id("backButton")).click();
-				
 				resolve(cardData);
 			});
 	});
@@ -254,85 +186,43 @@ function readTransactionsForCardByNumber(cardNumber) {
 
 
 function readCardBalances(events, pageNumber) {
-	/*
-		 - readCardBalances()
-				- wait for "Card Balance and Transaction History" page
-					 - set list of transactions = []
-					 - get total number of pages from "class=ui-paginator-current" (ie "(x of y)")
-					 - for loop through all y pages "(x of y)"
-					 - for each row in tbody //*[@id="dataTable_data"]
-							- read a line and append to array
-							- table row 
-								 - col 1 = mm/dd/yyyy hh:mm AM/PM
-								 - col 2 = bus id
-								 - col 3 = action 
-								 - col 4 = $ amt
-								 - col 5 = transaction
-					 - end loop
-					 - navigate to next page
-							- Find href with class="ui-paginator-next"
-							- If it does NOT have class="ui-state-disabled" then click it
-				- end loop
-		 
-				- Examples
-					 - Buy month pass: 3=issue a new card / ticket, 4=$128.00, 5=WCTA Full Fare Monthly Pass 2 Zones
-					 - use monthly pass: 3=Validation or deduction of SV amount, 4=$0.00, 5=Monthly Pass Full Zone 2
-					 - buy 10 trip ticket: 3=issue a new card / ticket, 4=$36.00, 5=WCTA 10 Trip Full 2 Zones
-					 - use 10 trip ticket: 3=Validation or deduction of SV amount, 4=$0.00, 5=10 Trip Full Zone 2
-         - click back button (id backButton)
-				 - parse data and build message for phone
-				 
-				 
-				 
-				 
-		Web page data
-		
-		Monthly Pass
-		   Buy - mm/dd/yy hh:MM AM/PM | xxxxx | issue a new card xxx        | $128.00 | xxx Monthly Pass xxx
-			 Use - mm/dd/yy hh:MM AM/PM | xxxxx | Validation or deduction xxx | $0.00   | xxx Monthly Pass xxx
-		10 trip
-		   Buy - mm/dd/yy hh:MM AM/PM | xxxxx | issue a new card xxx        | $36.00  | xxx 10 Trip xxx
-			 Use - mm/dd/yy hh:MM AM/PM | xxxxx | Validation or deduction xxx | $0.00   | xxx 10 Trip xxx
-				 
-	*/
 	return new Promise((resolve, reject) => {
 		logger.verbose("IN readCardBalances for page %s", pageNumber);
 		
-		var xpathPaginator = format("//*[text()[contains(.,'({0} of ')]]", pageNumber);
-    var xpathDesiredTransactions = "//tr[contains(@class, 'ui-widget-content') and not (contains(@class, 'canceledTransaction'))]";
-		var xpathNextPageButton = "//a[contains(@class, 'ui-paginator-next') and not (contains(@class, 'ui-state-disabled'))]";
-		
 		_driver
-			.wait(until.elementLocated(by.xpath(xpathPaginator)), 10000)
+			.wait(until.elementLocated(by.xpath(format(xpathQueries.balances.paginator, pageNumber))), 10000)
 			.then(() => {
-				return _driver.findElement(by.className("ui-paginator-current"));
-			})
-			.then(currentPaginator => {
-				return currentPaginator.getText();
+				return _driver.findElement(by.className("ui-paginator-current")).getText();
 			})
 			.then(pageXofY => {
 				logger.verbose("  %s", pageXofY);
 				
-				// Need to not include canceled/invalid/failed transactions, which have the CSS class canceledTransaction
-				return _driver.findElements(by.xpath(xpathDesiredTransactions));
+				// Search for the transactions we want on this page, excluding canceled, invalid,
+				// and failed transactions, which all have the CSS class "canceledTransaction"
+				return _driver.findElements(by.xpath(xpathQueries.balances.desiredTransactions));
 			})
 			.then(rows => {
+				// Parse the rows of data on this page
 				rows.map(row => row.getText().then(rowText => parseRow(rowText, events)));
-				return _driver.findElement(by.xpath(xpathNextPageButton));
+				
+				// Look for the "next page" button
+				return _driver.findElement(by.xpath(xpathQueries.balances.nextPageButton));
 			})
 			.then(
 				nextPaginator => {
+					// There is a next page button, so click it and then read the next page
 					nextPaginator.click();
 					_driver.then(() => resolve(readCardBalances(events, pageNumber+1)));
 				},
 				err => {
+					// There is no next page button, so we're done
 					resolve(calculatePhoneMessage(events));
 			});
 	});	
 }
 
 
-function parseRow(rowText, events) {
+function parseRow(rowText, events, done) {
 	/*
 	  Monthly
 			 Buy - mm/dd/yy hh:MM AM/PM | xxxxx | issue a new card xxx        | $128.00 | xxx Monthly Pass xxx
@@ -361,7 +251,6 @@ function parseRow(rowText, events) {
 
 
 function calculatePhoneMessage(events) {
-	// ASSUMES array is sorted with most recent records FIRST
 	var cardData = "";
 	
 	var latestPurchaseIndex = events.findIndex(e => e.action === "purchased");
@@ -398,7 +287,7 @@ function calculatePhoneMessage(events) {
 }
 
 
-function sendBusPassBalancesToBrian(message) {
+function sendBalancesToPhone(message) {
 	logger.verbose("WIll send this to my phone: %s", message);
 	
   //_driver
