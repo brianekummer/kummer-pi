@@ -1,7 +1,7 @@
 // Bus Pass
 // ------------------
 // This script logs into Port Authority's web site and gets the
-// balances of my ConnectCards and forwards them to my phone
+// balances of my ConnectCards and forwards them to my phone.
 //
 //
 // Command-Line Parameters
@@ -67,14 +67,26 @@ var utils = require(path.join(__dirname, "kummer-utils.js"));
 
 utils.configureLogger(logger, __filename);
 
-var xpathQueries = {
-	cards: {
-		cardNumber: "//*[@id='cards_data']/tr[{0}]/td[1]/div/div[2]/span"
+var webPageElements = {
+	loginPage: {
+		loginButtonId: "LoginButton",
+		emailId: "EMAIL",
+		passwordId: "PASSWORD"
 	},
-	balances: {
-		paginator: "//*[text()[contains(.,'({0} of ')]]",
-    desiredTransactions: "//tr[contains(@class, 'ui-widget-content') and not (contains(@class, 'canceledTransaction'))]",
-		nextPageButton: "//a[contains(@class, 'ui-paginator-next') and not (contains(@class, 'ui-state-disabled'))]"
+	welcomePage: {
+		manageCardsButtonId: "sectionNavigation:nav_listCards"
+	},
+	manageCardsPage: {
+		cardsGridId: "cards",
+	  cardNumberXpath: "//*[@id='cards_data']/tr[{0}]/td[1]/div/div[2]/span",
+		showTransactionsButtonId: "showCardTransactionsButton",
+		logoutButtonId: "sectionNavigation:nav_logout"
+	},
+	cardBalancesPage: {
+		paginatorXpath: "//*[text()[contains(.,'({0} of ')]]",
+		desiredTransactionsXpath: "//tr[contains(@class, 'ui-widget-content') and not (contains(@class, 'canceledTransaction'))]",
+		nextPageButtonXpath: "//a[contains(@class, 'ui-paginator-next') and not (contains(@class, 'ui-state-disabled'))]",
+		backButtonId: "backButton"
 	}
 };
 
@@ -110,12 +122,12 @@ function getFormattedRunDate() {
 function login() {
   _driver.get(utils.configuration.buspass.url);
   _driver
-	  .wait(until.elementLocated(by.id("LoginButton")), 10000)
+	  .wait(until.elementLocated(by.id(webPageElements.loginPage.loginButtonId)), 10000)
     .then(
       () => {
-        _driver.findElement(by.id("EMAIL")).sendKeys(utils.configuration.buspass.username);
-        _driver.findElement(by.id("PASSWORD")).sendKeys(utils.configuration.buspass.password);
-        _driver.findElement(by.id("LoginButton")).click();
+        _driver.findElement(by.id(webPageElements.loginPage.emailId)).sendKeys(utils.configuration.buspass.username);
+        _driver.findElement(by.id(webPageElements.loginPage.passwordId)).sendKeys(utils.configuration.buspass.password);
+        _driver.findElement(by.id(webPageElements.loginPage.loginButtonId)).click();
       },
       err => logger.error('Login error: %s', err)
 		);
@@ -124,10 +136,10 @@ function login() {
 
 function welcomePage() {
   _driver
-	  .wait(until.elementLocated(by.id("sectionNavigation:nav_listCards")), 10000)
+	  .wait(until.elementLocated(by.id(webPageElements.welcomePage.manageCardsButtonId)), 10000)
     .then(
       () => {
-        _driver.findElement(by.id("sectionNavigation:nav_listCards")).click();
+        _driver.findElement(by.id(webPageElements.welcomePage.manageCardsButtonId)).click();
       },
       err => logger.error('Welcome page error: %s', err)
 		);
@@ -141,15 +153,13 @@ function manageCardsPage() {
 			getFormattedRunDate());
 
 		_driver
-			.wait(until.elementLocated(by.id("cards")), 10000)
+			.wait(until.elementLocated(by.id(webPageElements.manageCardsPage.cardsGridId)), 10000)
 			.then(() => {
 				return readTransactionsForCardByNumber(1); 
 			})
 			.then(cardData => {
 				messageToPhone += cardData;
-				
-				_driver
-					.wait(until.elementLocated(by.id("cards")), 10000);
+				_driver.wait(until.elementLocated(by.id(webPageElements.manageCardsPage.cardsGridId)), 10000);
 			})
 			.then(() => {
 				return readTransactionsForCardByNumber(2); 
@@ -169,16 +179,16 @@ function readTransactionsForCardByNumber(cardNumber) {
 		
 		var events = [];
 			
-		_driver.findElement(by.xpath(format(xpathQueries.cards.cardNumber, cardNumber))).click();
+		_driver.findElement(by.xpath(format(webPageElements.manageCardsPage.cardNumberXpath, cardNumber))).click();
 		_driver
-			.wait(until.elementLocated(by.id("showCardTransactionsButton")), 10000)
+			.wait(until.elementLocated(by.id(webPageElements.manageCardsPage.showTransactionsButtonId)), 10000)
 			.then(() => {
-				utils.sleep(500);
-				_driver.findElement(by.id("showCardTransactionsButton")).click();
+				utils.sleep(500);    // SOMETIMES bad things happen without this
+				_driver.findElement(by.id(webPageElements.manageCardsPage.showTransactionsButtonId)).click();
 				return readCardBalances(events, 1);
 			})
 			.then(cardData => {
-				_driver.findElement(by.id("backButton")).click();
+				_driver.findElement(by.id(webPageElements.cardBalancesPage.backButtonId)).click();
 				resolve(cardData);
 			});
 	});
@@ -189,19 +199,18 @@ function readCardBalances(events, pageNumber) {
 	return new Promise((resolve, reject) => {
 		logger.verbose("IN readCardBalances for page %s", pageNumber);
 
+		var xpathToPaginator = format(webPageElements.cardBalancesPage.paginatorXpath, pageNumber);
 		var searchStatus = { done: false };
 		
 		_driver
-			.wait(until.elementLocated(by.xpath(format(xpathQueries.balances.paginator, pageNumber))), 10000)
-			.then(() => {
-				return _driver.findElement(by.className("ui-paginator-current")).getText();
-			})
+			.wait(until.elementLocated(by.xpath(xpathToPaginator)), 10000)
+			.findElement(by.xpath(xpathToPaginator)).getText()
 			.then(pageXofY => {
 				logger.verbose("  %s", pageXofY);
 				
 				// Search for the transactions we want on this page, excluding canceled, invalid,
 				// and failed transactions, which all have the CSS class "canceledTransaction"
-				return _driver.findElements(by.xpath(xpathQueries.balances.desiredTransactions));
+				return _driver.findElements(by.xpath(webPageElements.cardBalancesPage.desiredTransactionsXpath));
 			})
 			.then(rows => {
 				// Parse the rows of data on this page
@@ -218,7 +227,7 @@ function readCardBalances(events, pageNumber) {
 					return _driver.findElement(by.xpath("//[id='GARBAGE!']"));
 				} else {
 					// Look for the "next page" button
-					return _driver.findElement(by.xpath(xpathQueries.balances.nextPageButton));
+					return _driver.findElement(by.xpath(webPageElements.cardBalancesPage.nextPageButtonXpath));
 				}
 			})
 			.then(
@@ -289,10 +298,10 @@ function calculatePhoneMessage(events) {
 				: null;
 		  break;
 		case "10 trip":
-			var tripsUsed = events.filter(e => e.action === "used" && e.passType === "10 trip").length;
-			var tripsRemaining = 10 - tripsUsed;
+			var numTripsUsed = events.filter(e => e.action === "used" && e.passType === "10 trip").length;
+			var numTripsRemaining = 10 - numTripsUsed;
 			
-			cardData = tripsRemaining + " left";
+			cardData = numTripsRemaining + " left";
 		  break;
 	}
 
@@ -316,10 +325,10 @@ function logout() {
   logger.verbose("  IN logOut");
 
   _driver
-	  .wait(until.elementLocated(by.id("sectionNavigation:nav_logout")), 10000)
+	  .wait(until.elementLocated(by.id(webPageElements.manageCardsPage.logoutButtonId)), 10000)
     .then(
       () => {
-        _driver.findElement(by.id("sectionNavigation:nav_logout")).click();
+        _driver.findElement(by.id(webPageElements.manageCardsPage.logoutButtonId)).click();
       },
       err => logger.error('IN logout - ERROR: %s', err));
 }
@@ -329,7 +338,7 @@ function quit() {
   logger.verbose("  IN quit");
 
   _driver
-	  _driver.wait(until.elementLocated(by.id("LoginButton")), 10000)
+	  _driver.wait(until.elementLocated(by.id(webPageElements.loginPage.loginButtonId)), 10000)
     .then(
       () => {
         _driver.quit();
