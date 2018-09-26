@@ -188,6 +188,8 @@ function readTransactionsForCardByNumber(cardNumber) {
 function readCardBalances(events, pageNumber) {
 	return new Promise((resolve, reject) => {
 		logger.verbose("IN readCardBalances for page %s", pageNumber);
+
+		var searchStatus = { done: false };
 		
 		_driver
 			.wait(until.elementLocated(by.xpath(format(xpathQueries.balances.paginator, pageNumber))), 10000)
@@ -203,10 +205,21 @@ function readCardBalances(events, pageNumber) {
 			})
 			.then(rows => {
 				// Parse the rows of data on this page
-				rows.map(row => row.getText().then(rowText => parseRow(rowText, events)));
 				
-				// Look for the "next page" button
-				return _driver.findElement(by.xpath(xpathQueries.balances.nextPageButton));
+				return new Promise((resolve, reject) => {
+					rows.map(row => row.getText().then(rowText => parseRow(rowText, events, searchStatus)));
+					resolve("");
+				});
+			})
+			.then(() => {	
+				if (searchStatus.done) {
+					// Found my most recent purchase, so there is no need to continue
+					// searching through transactions
+					return _driver.findElement(by.xpath("//[id='GARBAGE!']"));
+				} else {
+					// Look for the "next page" button
+					return _driver.findElement(by.xpath(xpathQueries.balances.nextPageButton));
+				}
 			})
 			.then(
 				nextPaginator => {
@@ -222,7 +235,7 @@ function readCardBalances(events, pageNumber) {
 }
 
 
-function parseRow(rowText, events, done) {
+function parseRow(rowText, events, searchStatus) {
 	/*
 	  Monthly
 			 Buy - mm/dd/yy hh:MM AM/PM | xxxxx | issue a new card xxx        | $128.00 | xxx Monthly Pass xxx
@@ -241,10 +254,17 @@ function parseRow(rowText, events, done) {
 		          null
 	};
 	
-	if (eventInfo.action != null && eventInfo.passType != null) {
+	if (eventInfo.action != null && eventInfo.passType != null && !searchStatus.done) {
     logger.verbose("    %s %s pass @ %s", eventInfo.action[0].toUpperCase() + eventInfo.action.substring(1), eventInfo.passType, eventInfo.dateTime.format("MM/DD/YYYY hh:mm A"));
 		events.push(eventInfo);
-  } else {
+
+		// Found our most recent purchasing event, so no need to keep looking
+		if (eventInfo.action == "purchased") {
+		  searchStatus.done = true;
+		}
+  } else if (searchStatus.done) {
+		logger.verbose("    >>> DONE, so skipping event: %s", rowText);
+	} else {
     logger.verbose("    >>> No useful event: %s", rowText);
 	}
 }
@@ -252,13 +272,7 @@ function parseRow(rowText, events, done) {
 
 function calculatePhoneMessage(events) {
 	var cardData = "";
-	
-	var latestPurchaseIndex = events.findIndex(e => e.action === "purchased");
-	var latestPurchase = events[latestPurchaseIndex];
-	
-	// Remove all items in array after the latest purchase, leaving only 
-	// elements that happened after the purchase.
-	events.splice(latestPurchaseIndex, events.length-latestPurchaseIndex-1);
+	var latestPurchase = events[events.length-1];
 
   switch(latestPurchase.passType) {
 	  case "monthly":
