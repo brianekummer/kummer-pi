@@ -188,8 +188,8 @@ function findDuplicateNotesForOneUser(familyMember, notes) {
               // There are some things that I don't want to be thought of as dupes
               //   - In the same category/subfolder, "Job Performance 2016" & "Job Performance 2017"
               if (
-                (noteLookingForDupesOf.category == noteToCompareTo.category) &&
-                (noteLookingForDupesOf.title.replace(/20\d\d/).trim() == noteToCompareTo.title.replace(/20\d\d/).trim()))
+                (noteLookingForDupesOf.category == noteToCompareTo.category || (noteLookingForDupesOf.category+noteToCompareTo.category).match(/archive/i)) &&
+                (noteLookingForDupesOf.title.replace(/20\d\d/g).trim() == noteToCompareTo.title.replace(/20\d\d/g).trim()))
                 isDuplicate = false;
 
               if (isDuplicate) {
