@@ -94,7 +94,7 @@ function getPiStatus() {
   logger.verbose(format("PiHole: {0}", piHoleStatus.upDown));
   
   var piStatusMsg = format(
-    "pi_status|{0}|{1}|{2}|{3}|{4}|{5}|{6}|{7}|{8}|{9}|{10}|{11}|{12}|{13}|{14}|{15}|{16}|{17}|{18}|", 
+    "pi-1_status|{0}|{1}|{2}|{3}|{4}|{5}|{6}|{7}|{8}|{9}|{10}|{11}|{12}|{13}|{14}|{15}|{16}|{17}|{18}|", 
     runDate,
     diskUsage.internal,
     diskUsage.external,
@@ -174,12 +174,14 @@ function getDiskUsage() {
   var availableExternal = 0;
 
   // Get disk usage of external usb drive
-  var parts = utils
-    .executeShellCommand("df -BM | grep external_usb")
-    .replace(/\s\s+/g, " ")      // convert multiple spaces into one space
-    .split(" ");
-  usedExternal = Number(parts[DF_COLUMN_USED].match(/\d+/));
-  availableExternal = Number(parts[DF_COLUMN_AVAILABLE].match(/\d+/));
+  // var parts = utils
+  //  .executeShellCommand("df -BM | grep external_usb")
+  //  .replace(/\s\s+/g, " ")      // convert multiple spaces into one space
+  //  .split(" ");
+  //usedExternal = Number(parts[DF_COLUMN_USED].match(/\d+/));
+  //availableExternal = Number(parts[DF_COLUMN_AVAILABLE].match(/\d+/));
+  usedExternal = 0;
+  availableExternal = 100;
 
   // Get disk usage of all other storage (internal)
   utils
@@ -273,10 +275,6 @@ function getNextCloudNotesStats(nextCloudNoteBrianNoteId) {
 * Gets the status of NextCloud notes
 * - upDown:        up|down. Test if it is up by retrieving id of one of my notes, then query
 *                  Notes API and see if it returns data.
-* - numberOf:      Query database for files
-*                    - Only want txt and md files
-*                    - Only want original author's version (is why checking mount point)
-* - lastBackup:  Get date/time of latest daily backup, which backs up notes
 ******************************************************************************************/
   var upDown = null;
   var cmd = null;
@@ -285,12 +283,26 @@ function getNextCloudNotesStats(nextCloudNoteBrianNoteId) {
   try {
     cmd = format("curl --silent --user {0}:{1} {2}/notes/{3}{4}",
       brian.name, brian.nextcloud.scripts.password,
-      utils.configuration.nextcloud.notes.base.url, nextCloudNoteBrianNoteId, "?exclude=modified,category,favorite,title,content");
-    var noteInfo = utils.executeShellCommand(cmd);
-    upDown = (noteInfo != "" ? "up" : "down");
+      utils.configuration.nextcloud.notes.base.url, nextCloudNoteBrianNoteId, "?exclude=modified,category,favorite,title,content,etag");
+    var note = utils.executeShellCommand(cmd);
+//logger.verbose("CMD=" + cmd);
+//logger.verbose("   Result=" + note);
+    upDown = (note.id != nextCloudNoteBrianNoteId ? "up" : "down");
   }
   catch (ex) {
-    upDown = "down";
+    // Sometimes this CURL command fails with a status of 16, which means "HTTP/2 error. A problem was detected in the HTTP2 framing layer.",
+    // but the correct output is in ex.stdout.
+    if (ex.status == 16) {
+      var note = ex.stdout;
+      upDown = (note != null && note.id != nextCloudNoteBrianNoteId ? "up" : "down");
+    }
+    else {
+//logger.verbose("ERROR checking Notes up/down: ex=" + ex);
+//logger.verbose("   status=" + ex.status);
+//logger.verbose("   stderr=" + ex.stderr.toString());
+//logger.verbose("   stdout=" + ex.stdout.toString());
+      upDown = "down";
+    }
   }
   
   return {
