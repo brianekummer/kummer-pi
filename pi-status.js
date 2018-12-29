@@ -90,11 +90,9 @@ function getPiStatus() {
   var nextCloudNotesStats = getNextCloudNotesStats(piDailyStats.nextCloudNoteBrianNoteId);
   logger.verbose(format("NextCloud Notes: {0}", nextCloudNotesStats.upDown));
 
-  var piHoleStatus = getPiHoleStatus();
-  logger.verbose(format("PiHole: {0}", piHoleStatus.upDown));
-  
+  // Removed PiHole status, which is why there's a || where {14} used to be
   var piStatusMsg = format(
-    "pi-1_status|{0}|{1}|{2}|{3}|{4}|{5}|{6}|{7}|{8}|{9}|{10}|{11}|{12}|{13}|{14}|{15}|{16}|{17}|{18}|", 
+    "pi-1_status|{0}|{1}|{2}|{3}|{4}|{5}|{6}|{7}|{8}|{9}|{10}|{11}|{12}|{13}||{14}|{15}|{16}|{17}|", 
     runDate,
     diskUsage.internal,
     diskUsage.external,
@@ -109,7 +107,6 @@ function getPiStatus() {
     nextCloudNotesStats.upDown,
     piDailyStats.nextCloudNotesNumberOf,
     piDailyStats.nextCloudNotesLastBackup,
-    piHoleStatus.upDown,
     swapping.in,
     swapping.out,
     averageLoad.fiveMin,
@@ -123,15 +120,13 @@ function getPiStatus() {
       "Swap: in={4}, out={5}; " +
       "Load: 5m={6}, 15m={7}; " +
       "NC: {8}, DB={9} mb, Versions={10}/{11}, SSL={12} days, Bkp={13}; " +
-      "Notes: {14}, #={15}, Bkp={16}; " +
-      "PiHole: {17}",
+      "Notes: {14}, #={15}, Bkp={16}",
       diskUsage.internal, diskUsage.external,
       memoryUsage.internal, memoryUsage.swap,
       swapping.in, swapping.out,
       averageLoad.fiveMin, averageLoad.fifteenMin,
       nextCloudStats.upDown, piDailyStats.nextCloudDbSizeMb, nextCloudStats.myVersion, piDailyStats.nextCloudLatestVersion, piDailyStats.sslCertificateDaysUntilExpires, piDailyStats.nextCloudLastBackup,
-      nextCloudNotesStats.upDown, piDailyStats.nextCloudNotesNumberOf, piDailyStats.nextCloudNotesLastBackup,
-      piHoleStatus.upDown));
+      nextCloudNotesStats.upDown, piDailyStats.nextCloudNotesNumberOf, piDailyStats.nextCloudNotesLastBackup));
 }
 
 
@@ -174,14 +169,14 @@ function getDiskUsage() {
   var availableExternal = 0;
 
   // Get disk usage of external usb drive
-  // var parts = utils
-  //  .executeShellCommand("df -BM | grep external_usb")
-  //  .replace(/\s\s+/g, " ")      // convert multiple spaces into one space
-  //  .split(" ");
-  //usedExternal = Number(parts[DF_COLUMN_USED].match(/\d+/));
-  //availableExternal = Number(parts[DF_COLUMN_AVAILABLE].match(/\d+/));
-  usedExternal = 0;
-  availableExternal = 100;
+   var parts = utils
+    .executeShellCommand("df -aBM | grep //router.kummer")
+    .replace(/\s\s+/g, " ")      // convert multiple spaces into one space
+    .split(" ");
+  usedExternal = Number(parts[DF_COLUMN_USED].match(/\d+/));
+  availableExternal = Number(parts[DF_COLUMN_AVAILABLE].match(/\d+/));
+  //usedExternal = 0;
+  //availableExternal = 100;
 
   // Get disk usage of all other storage (internal)
   utils
@@ -309,28 +304,3 @@ function getNextCloudNotesStats(nextCloudNoteBrianNoteId) {
     upDown: upDown
   };
 }         
-
-
-function getPiHoleStatus() {   
-/******************************************************************************************
-* Gets the status of PiHole, which returns something like this:
-* {"domains_being_blocked":"104,206","dns_queries_today":"220","ads_blocked_today":"48","ads_percentage_today":"21.8"}
-* - upDown:        up|down
-******************************************************************************************/
-  var upDown = null;
-  
-  try {
-    upDown = utils
-      .executeShellCommand(
-        format("curl --silent {0}", utils.configuration.pihole.localadmin.url)) != ""
-        ? "up"
-        : "down";
-  }
-  catch (ex) {
-    upDown = "down";
-  }
-  
-  return {
-    upDown: upDown
-  };
-}
