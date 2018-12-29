@@ -8,3 +8,4 @@
 /var/www/nextcloud/config
 /var/www/nextcloud/themes
 /var/www/nextcloud/data
+/usr/share/kodi/addons/skin.estuary/xml/Home.xml
