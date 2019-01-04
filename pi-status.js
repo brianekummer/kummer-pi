@@ -84,11 +84,18 @@ function getPiStatus() {
   var averageLoad = getAverageLoad();
   logger.verbose(format("Avg Load: 5={0}, 15={1}", averageLoad.fiveMin, averageLoad.fifteenMin));
 
-  var nextCloudStats = getNextCloudStats();
-  logger.verbose(format("NextCloud: {0}, My Version={1}", nextCloudStats.upDown, nextCloudStats.myVersion));
 
-  var nextCloudNotesStats = getNextCloudNotesStats(piDailyStats.nextCloudNoteBrianNoteId);
-  logger.verbose(format("NextCloud Notes: {0}", nextCloudNotesStats.upDown));
+  var nextCloudStats = {}; 
+  var nextCloudNotesStats = {};
+  if (utils.nextCloudIsInstalled()) {
+    nextCloudStats = getNextCloudStats();
+    logger.verbose(format("NextCloud: {0}, My Version={1}", nextCloudStats.upDown, nextCloudStats.myVersion));
+
+    nextCloudNotesStats = getNextCloudNotesStats(piDailyStats.nextCloudNoteBrianNoteId);
+    logger.verbose(format("NextCloud Notes: {0}", nextCloudNotesStats.upDown));
+  }
+
+
 
   // Removed PiHole status, which is why there's a || where {14} used to be
   var piStatusMsg = format(
@@ -113,6 +120,60 @@ function getPiStatus() {
     averageLoad.fifteenMin);
 
   utils.sendMessageToPhone(utils.configuration.family["brian"], piStatusMsg);
+
+
+  // New message to my phone
+  var hostName = utils.getHostName();
+  var piNumber = hostName[hostName.length-1];
+
+
+  var piStatusNew = {
+    message_datetime: runDate,
+    pi:{
+      disk_internal: diskUsage.internal,
+      memory_internal: memoryUsage.internal,
+      memory_swap: memoryUsage.swap,
+      swapping_in: swapping.in,
+      swapping_out: swapping.out,
+      load_five_min: averageLoad.fiveMin,
+      load_fifteen_min: averageLoad.fifteenMin,
+    },
+    kodi:{
+      status: "up",
+      current_version: "17.6",
+      latest_version: "17.6"
+    },
+    ufw:{
+      status: "up"
+    },
+    router:{
+      current_version: "v3.0-r38060 std (12/20/2018)",
+      uptime: "6 days",
+      load_five_min: 0.15,
+      load_fifteen_min: 0.12,
+      nas_storage_used: diskUsage.external,
+    },
+  };
+
+  if (utils.nextCloudIsInstalled()) {
+    piStatusNew.nextcloud = {
+      status: nextCloudStats.upDown,
+      db_size: piDailyStats.nextCloudDbSizeMb,
+      current_version: nextCloudStats.myVersion[0],
+      latest_version: piDailyStats.nextCloudLatestVersion,
+      ssl_cert_expiry: piDailyStats.sslCertificateDaysUntilExpires,
+      last_backup: piDailyStats.nextCloudLastBackup
+    };
+    piStatusNew.nextcloud_notes = {
+      status: nextCloudNotesStats.upDown,
+      last_backup: piDailyStats.nextCloudNotesLastBackup
+    };
+  }
+  piStatusMsg = format("pi_{0}_status_new|{1}|", piNumber, JSON.stringify(piStatusNew));
+  utils.sendMessageToPhone(utils.configuration.family["brian"], piStatusMsg);
+
+
+
 
   if (logger.level == "info")
     logger.info(format("Disk: i={0}%, e={1}%; " +
@@ -170,7 +231,7 @@ function getDiskUsage() {
 
   // Get disk usage of external usb drive
    var parts = utils
-    .executeShellCommand("df -aBM | grep //router.kummer")
+    .executeShellCommand("df -aBM | grep '//router.kummer'")
     .replace(/\s\s+/g, " ")      // convert multiple spaces into one space
     .split(" ");
   usedExternal = Number(parts[DF_COLUMN_USED].match(/\d+/));

@@ -37,6 +37,8 @@ var webdriver = require("selenium-webdriver"),
     by = webdriver.By,
     until = webdriver.until;
 var chrome = require("selenium-webdriver/chrome");
+var os = require("os");
+
 
 var nodeenvconfiguration = require('node-env-configuration');
 var _configuration = nodeenvconfiguration({
@@ -103,12 +105,22 @@ function getLogLevelFromParameters(defaultValue) {
 }
 
 
+function getHostName() {
+  return os.hostname();
+}
+
+
 function getBrowserFromParameters() {
   // Valid values for browser are default|chrome|phantomjs.
   // Look for browser in parameters. If not found, default to "default"
   var value = process.argv.find(p => p.match(/(chrome|phantomjs)/i));
 
   return (value != null ? value : "default");
+}
+
+
+function nextCloudIsInstalled() {
+  return fs.existsSync("/var/www/nextcloud");
 }
 
 
@@ -363,7 +375,9 @@ module.exports = {
   configureLogger: configureLogger,
 
   getLogLevelFromParameters: getLogLevelFromParameters,
+  getHostName: getHostName,
   getBrowserFromParameters: getBrowserFromParameters,
+  nextCloudIsInstalled: nextCloudIsInstalled,
   executeShellCommand: executeShellCommand,
   executeSqlCommand: executeSqlCommand,
   sendMessageToPhone: sendMessageToPhone,
