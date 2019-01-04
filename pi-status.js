@@ -54,6 +54,7 @@ process.on('uncaughtException', uncaughtExceptionHandler.bind(null, {exit:true})
 if (utils.isRunningOnWindows)
   throw new Error("This script -= MUST =- be run on the Pi");
 
+
 getPiStatus();
 return;
 
@@ -73,7 +74,7 @@ function getPiStatus() {
     piDailyStats.sslCertificateDaysUntilExpires));
     
   var diskUsage = getDiskUsage();
-  logger.verbose(format("Disk: int={0}%, external={1}%", diskUsage.internal, diskUsage.external));
+  logger.verbose(format("Disk: int={0}%", diskUsage.internal));
 
   var memoryUsage = getMemoryUsage();
   logger.verbose(format("Memory: int={0}%, swap={1}%", memoryUsage.internal, memoryUsage.swap));
@@ -84,6 +85,20 @@ function getPiStatus() {
   var averageLoad = getAverageLoad();
   logger.verbose(format("Avg Load: 5={0}, 15={1}", averageLoad.fiveMin, averageLoad.fifteenMin));
 
+
+
+  var kodi = getKodiStats();
+  logger.verbose(format("Kodi: {0}, Ver={1}, Latest Ver={2}", kodi.status, kodi.currentVersion, kodi.latestVersion));
+
+  var ufw = getUfwStats();
+  logger.verbose(format("UFW: {0}", ufw.status));
+
+
+
+  var router = getRouterStats();
+  logger.verbose(format("Router: {0}, up {1}", router.version, router.upTime));
+  logger.verbose(format("  Load: 1={0}, 5={1}, 15={2}", router.averageLoad.oneMin, router.averageLoad.fiveMin, router.averageLoad.fifteenMin));
+  logger.verbose(format("  NAS storage: {0}% used", router.nasStorage));
 
   var nextCloudStats = {}; 
   var nextCloudNotesStats = {};
@@ -102,7 +117,8 @@ function getPiStatus() {
     "pi-1_status|{0}|{1}|{2}|{3}|{4}|{5}|{6}|{7}|{8}|{9}|{10}|{11}|{12}|{13}||{14}|{15}|{16}|{17}|", 
     runDate,
     diskUsage.internal,
-    diskUsage.external,
+    //diskUsage.external,
+    router.nasStorage,
     memoryUsage.internal,
     memoryUsage.swap,
     nextCloudStats.upDown,
@@ -135,23 +151,25 @@ function getPiStatus() {
       memory_swap: memoryUsage.swap,
       swapping_in: swapping.in,
       swapping_out: swapping.out,
+      load_one_min: averageLoad.oneMin,
       load_five_min: averageLoad.fiveMin,
       load_fifteen_min: averageLoad.fifteenMin,
     },
     kodi:{
-      status: "up",
-      current_version: "17.6",
-      latest_version: "17.6"
+      status: kodi.status,
+      current_version: kodi.currentVersion,
+      latest_version: kodi.latestVersion
     },
     ufw:{
-      status: "up"
+      status: ufw.status
     },
     router:{
-      current_version: "v3.0-r38060 std (12/20/2018)",
-      uptime: "6 days",
-      load_five_min: 0.15,
-      load_fifteen_min: 0.12,
-      nas_storage_used: diskUsage.external,
+      current_version: router.currentVersion,
+      uptime: router.uptime,
+      load_one_min: router.averageLoad.oneMin,
+      load_five_min: router.averageLoad.fiveMin,
+      load_fifteen_min: router.averageLoad.fifteenMin,
+      nas_storage_used: router.nasStorage
     },
   };
 
@@ -174,20 +192,25 @@ function getPiStatus() {
 
 
 
-
-  if (logger.level == "info")
-    logger.info(format("Disk: i={0}%, e={1}%; " +
-      "Memory: i={2}%, s={3}%; " + 
-      "Swap: in={4}, out={5}; " +
-      "Load: 5m={6}, 15m={7}; " +
-      "NC: {8}, DB={9} mb, Versions={10}/{11}, SSL={12} days, Bkp={13}; " +
-      "Notes: {14}, #={15}, Bkp={16}",
-      diskUsage.internal, diskUsage.external,
+  if (logger.level == "info") {
+    logger.info(format("PI: " +
+      "Disk: i={0}%, " +
+      "Memory: i={1}%, s={2}%; " + 
+      "Swap: in={3}, out={4}; " +
+      "Load: 1m={5}, 5m={6}, 15m={7}",
+      diskUsage.internal, 
       memoryUsage.internal, memoryUsage.swap,
       swapping.in, swapping.out,
-      averageLoad.fiveMin, averageLoad.fifteenMin,
+      averageLoad.oneMin, averageLoad.fiveMin, averageLoad.fifteenMin));
+    logger.info(format("KODI: {0}, Versions={1}/{2}", kodi.status, kodi.currentVersion, kodi.latestVersion));
+    logger.info(format("UFW: {0}", ufw.status));
+    logger.info(format("ROUTER: {0}, up {1}; Load: 1m={2}, 5m={3}, 15m={4}; NAS={5}%", router.currentVersion, router.uptime, router.averageLoad.oneMin,
+      router.averageLoad.fiveMin, router.averageLoad.fifteenMin, router.nasStorage));
+    logger.info(format("NEXTCLOUD: {0}, DB={1} mb, Versions={2}/{3}, SSL={4} days, Bkp={5}; " +
+      "Notes: {6}, #={7}, Bkp={8}",
       nextCloudStats.upDown, piDailyStats.nextCloudDbSizeMb, nextCloudStats.myVersion, piDailyStats.nextCloudLatestVersion, piDailyStats.sslCertificateDaysUntilExpires, piDailyStats.nextCloudLastBackup,
       nextCloudNotesStats.upDown, piDailyStats.nextCloudNotesNumberOf, piDailyStats.nextCloudNotesLastBackup));
+  }
 }
 
 
@@ -229,16 +252,6 @@ function getDiskUsage() {
   var availableInternal = 0;
   var availableExternal = 0;
 
-  // Get disk usage of external usb drive
-   var parts = utils
-    .executeShellCommand("df -aBM | grep '//router.kummer'")
-    .replace(/\s\s+/g, " ")      // convert multiple spaces into one space
-    .split(" ");
-  usedExternal = Number(parts[DF_COLUMN_USED].match(/\d+/));
-  availableExternal = Number(parts[DF_COLUMN_AVAILABLE].match(/\d+/));
-  //usedExternal = 0;
-  //availableExternal = 100;
-
   // Get disk usage of all other storage (internal)
   utils
     .executeShellCommand("df -BM | grep --invert external_usb | grep --invert Filesystem")
@@ -254,7 +267,6 @@ function getDiskUsage() {
 
   return {
     internal: Math.round(usedInternal/availableInternal*100),
-    external: Math.round(usedExternal/availableExternal*100)
   };
 }
 
@@ -278,16 +290,91 @@ function getSwapping() {
 
 
 function getAverageLoad() {
-  var parts = utils
-    .executeShellCommand("uptime")
-    .replace(/\s/g, "")      // remove all spaces
-    .split(",");
-  var fiveMin = parts[parts.length-2];
-  var fifteenMin = parts[parts.length-1];
+  //var parts = utils
+  //  .executeShellCommand("uptime")
+  //  .replace(/\s/g, "")      // remove all spaces
+  //  .split(",");
+
+  //return {
+  //  oneMin: parts[parts.length-3],
+  //  fiveMin: parts[parts.length-2],
+  //  fifteenMin: parts[parts.length-1]
+  //};
+
+
+  var uptimeStats = utils.executeShellCommand("uptime");
+  var loads = /load average\: ([^,]+), ([^,]+), ([\d\.]+)/i.exec(uptimeStats);
+  return {
+    oneMin: loads[1],
+    fiveMin: loads[2],
+    fifteenMin: loads[3]
+  };
+}
+
+
+function getKodiStats() {
+  var cmd = "";
+
+  var status;
+  try {
+    cmd = "curl --silent http://localhost:8080";
+    var kodiWebPage = utils.executeShellCommand(cmd);
+    status = kodiWebPage != "" ? "up" : "down";
+  }
+  catch (ex) {
+    status = "down";
+  }
+
+  cmd = "apt-cache policy kodi | grep -E '(Installed|Candidate)'";
+  var kodiVersions = utils.executeShellCommand(cmd);
+  var kodiVersionNumbers = kodiVersions.match(/\d+\.\d+/g);
 
   return {
-    fiveMin: fiveMin,
-    fifteenMin: fifteenMin
+    status: status,
+    currentVersion: kodiVersionNumbers[0],
+    latestVersion: kodiVersionNumbers[1]
+  };
+}
+
+
+function getUfwStats() {
+  var cmd = "sudo ufw status | grep -c 'ALLOW'";
+  var numUfwRules = utils.executeShellCommand(cmd);
+  var status = numUfwRules > 0 ? "up" : "down";
+  
+  return {
+    status: status
+  };
+}
+
+
+function getRouterStats() {
+  const DF_COLUMN_USED = 2;
+  const DF_COLUMN_AVAILABLE = 3;
+
+  var routerInfo = utils.executeShellCommand("curl -ks https://router.kummer");
+
+  var version = routerInfo.match(/DD-WRT v\d+\.\d+\-.*\(\d+\/\d+\/\d+\)/i);
+  var uptimeStats = routerInfo.match(/<span id=\"uptime\">.*?<\/span>/gim)[0];
+  var uptime = /up ([^,]+),/i.exec(uptimeStats)[1];
+  var loads = /load average\: ([^,]+), ([^,]+), ([^<]+)<\/span>/i.exec(uptimeStats);
+
+  var parts = utils
+    .executeShellCommand("df -aBM | grep '//router.kummer'")
+    .replace(/\s\s+/g, " ")      // convert multiple spaces into one space
+    .split(" ");
+  var nasStorageUsed = Number(parts[DF_COLUMN_USED].match(/\d+/));
+  var nasStorageAvailable = Number(parts[DF_COLUMN_AVAILABLE].match(/\d+/));
+
+  return {
+    currentVersion: version,
+    uptime: uptime,
+    averageLoad: {
+      oneMin: loads[1],
+      fiveMin: loads[2],
+      fifteenMin: loads[3]
+    },
+    nasStorage: Math.round(nasStorageUsed/nasStorageAvailable*100)
   };
 }
 
