@@ -164,7 +164,7 @@ function getPiStatus() {
       status: ufw.status
     },
     router:{
-      current_version: router.currentVersion,
+      current_version: router.currentVersion[0],
       uptime: router.uptime,
       load_one_min: router.averageLoad.oneMin,
       load_five_min: router.averageLoad.fiveMin,
