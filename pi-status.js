@@ -65,14 +65,17 @@ function getPiStatus() {
     logger.verbose("------------------------------------------------------------");
 
   var runDate = moment().format("YYYYMMDDHHmm");
-  var piDailyStats = utils.readExistingJsonFile(path.join(__dirname, "pi-daily-stats.json"));
 
-  logger.verbose(format("Daily stats: Run={0}; NC: DB={1}mb, Latest Ver={2}; Notes: #={3}, Last Bkp={4}, Brian Note Id={5}; SSL Cert: Expires={6} days",
-    piDailyStats.runDate, 
-    piDailyStats.nextCloudDbSizeMb, piDailyStats.nextCloudLatestVersion, 
-    piDailyStats.nextCloudNotesNumberOf, piDailyStats.nextCloudNotesLastBackup, piDailyStats.nextCloudNoteBrianNoteId,
-    piDailyStats.sslCertificateDaysUntilExpires));
-    
+
+  if (utils.nextCloudIsInstalled()) {
+    var piDailyStats = utils.readExistingJsonFile(path.join(__dirname, "pi-daily-stats.json"));
+    logger.verbose(format("Daily stats: Run={0}; NC: DB={1}mb, Latest Ver={2}; Notes: #={3}, Last Bkp={4}, Brian Note Id={5}; SSL Cert: Expires={6} days",
+      piDailyStats.runDate, 
+      piDailyStats.nextCloudDbSizeMb, piDailyStats.nextCloudLatestVersion, 
+      piDailyStats.nextCloudNotesNumberOf, piDailyStats.nextCloudNotesLastBackup, piDailyStats.nextCloudNoteBrianNoteId,
+      piDailyStats.sslCertificateDaysUntilExpires));
+  }
+  
   var diskUsage = getDiskUsage();
   logger.verbose(format("Disk: int={0}%", diskUsage.internal));
 
@@ -96,7 +99,7 @@ function getPiStatus() {
 
 
   var router = getRouterStats();
-  logger.verbose(format("Router: {0}, up {1}", router.version, router.upTime));
+  logger.verbose(format("Router: {0}, up {1}", router.currentVersion, router.upTime));
   logger.verbose(format("  Load: 1={0}, 5={1}, 15={2}", router.averageLoad.oneMin, router.averageLoad.fiveMin, router.averageLoad.fifteenMin));
   logger.verbose(format("  NAS storage: {0}% used", router.nasStorage));
 
@@ -113,6 +116,7 @@ function getPiStatus() {
 
 
   // Removed PiHole status, which is why there's a || where {14} used to be
+  /*
   var piStatusMsg = format(
     "pi-1_status|{0}|{1}|{2}|{3}|{4}|{5}|{6}|{7}|{8}|{9}|{10}|{11}|{12}|{13}||{14}|{15}|{16}|{17}|", 
     runDate,
@@ -136,6 +140,7 @@ function getPiStatus() {
     averageLoad.fifteenMin);
 
   utils.sendMessageToPhone(utils.configuration.family["brian"], piStatusMsg);
+  */
 
 
   // New message to my phone
