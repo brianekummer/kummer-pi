@@ -211,10 +211,12 @@ function getPiStatus() {
     logger.info(format("UFW: {0}", ufw.status));
     logger.info(format("ROUTER: {0}, up {1}; Load: 1m={2}, 5m={3}, 15m={4}; NAS={5}%", router.currentVersion, router.uptime, router.averageLoad.oneMin,
       router.averageLoad.fiveMin, router.averageLoad.fifteenMin, router.nasStorage));
-    logger.info(format("NEXTCLOUD: {0}, DB={1} mb, Versions={2}/{3}, SSL={4} days, Bkp={5}; " +
-      "Notes: {6}, #={7}, Bkp={8}",
-      nextCloudStats.upDown, piDailyStats.nextCloudDbSizeMb, nextCloudStats.myVersion, piDailyStats.nextCloudLatestVersion, piDailyStats.sslCertificateDaysUntilExpires, piDailyStats.nextCloudLastBackup,
-      nextCloudNotesStats.upDown, piDailyStats.nextCloudNotesNumberOf, piDailyStats.nextCloudNotesLastBackup));
+    if (utils.nextCloudIsInstalled()) {
+      logger.info(format("NEXTCLOUD: {0}, DB={1} mb, Versions={2}/{3}, SSL={4} days, Bkp={5}; " +
+        "Notes: {6}, #={7}, Bkp={8}",
+        nextCloudStats.upDown, piDailyStats.nextCloudDbSizeMb, nextCloudStats.myVersion, piDailyStats.nextCloudLatestVersion, piDailyStats.sslCertificateDaysUntilExpires, piDailyStats.nextCloudLastBackup,
+        nextCloudNotesStats.upDown, piDailyStats.nextCloudNotesNumberOf, piDailyStats.nextCloudNotesLastBackup));
+    }
   }
 }
 
