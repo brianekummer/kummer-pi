@@ -61,104 +61,33 @@ return;
 
 
 function getPiStatus() {
-  if (logger.level == "verbose")
-    logger.verbose("------------------------------------------------------------");
+  logger.verbose("------------------------------------------------------------");
 
   var runDate = moment().format("YYYYMMDDHHmm");
-
-
-  if (utils.nextCloudIsInstalled()) {
-    var piDailyStats = utils.readExistingJsonFile(path.join(__dirname, "pi-daily-stats.json"));
-    logger.verbose(format("Daily stats: Run={0}; NC: DB={1}mb, Latest Ver={2}; Notes: #={3}, Last Bkp={4}, Brian Note Id={5}; SSL Cert: Expires={6} days",
-      piDailyStats.runDate, 
-      piDailyStats.nextCloudDbSizeMb, piDailyStats.nextCloudLatestVersion, 
-      piDailyStats.nextCloudNotesNumberOf, piDailyStats.nextCloudNotesLastBackup, piDailyStats.nextCloudNoteBrianNoteId,
-      piDailyStats.sslCertificateDaysUntilExpires));
-  }
-  
-  var diskUsage = getDiskUsage();
-  logger.verbose(format("Disk: int={0}%", diskUsage.internal));
-
-  var memoryUsage = getMemoryUsage();
-  logger.verbose(format("Memory: int={0}%, swap={1}%", memoryUsage.internal, memoryUsage.swap));
-
-  var swapping = getSwapping();
-  logger.verbose(format("Swapping: in={0}, out={1}", swapping.in, swapping.out));
-
-  var averageLoad = getAverageLoad();
-  logger.verbose(format("Avg Load: 5={0}, 15={1}", averageLoad.fiveMin, averageLoad.fifteenMin));
-
-
-
-  var kodi = getKodiStats();
-  logger.verbose(format("Kodi: {0}, Ver={1}, Latest Ver={2}", kodi.status, kodi.currentVersion, kodi.latestVersion));
-
-  var ufw = getUfwStats();
-  logger.verbose(format("UFW: {0}", ufw.status));
-
-
-
-  var router = getRouterStats();
-  logger.verbose(format("Router: {0}, up {1}", router.currentVersion, router.upTime));
-  logger.verbose(format("  Load: 1={0}, 5={1}, 15={2}", router.averageLoad.oneMin, router.averageLoad.fiveMin, router.averageLoad.fifteenMin));
-  logger.verbose(format("  NAS storage: {0}% used", router.nasStorage));
-
-  var nextCloudStats = {}; 
-  var nextCloudNotesStats = {};
-  if (utils.nextCloudIsInstalled()) {
-    nextCloudStats = getNextCloudStats();
-    logger.verbose(format("NextCloud: {0}, My Version={1}", nextCloudStats.upDown, nextCloudStats.myVersion));
-
-    nextCloudNotesStats = getNextCloudNotesStats(piDailyStats.nextCloudNoteBrianNoteId);
-    logger.verbose(format("NextCloud Notes: {0}", nextCloudNotesStats.upDown));
-  }
-
-
-
-  // Removed PiHole status, which is why there's a || where {14} used to be
-  /*
-  var piStatusMsg = format(
-    "pi-1_status|{0}|{1}|{2}|{3}|{4}|{5}|{6}|{7}|{8}|{9}|{10}|{11}|{12}|{13}||{14}|{15}|{16}|{17}|", 
-    runDate,
-    diskUsage.internal,
-    //diskUsage.external,
-    router.nasStorage,
-    memoryUsage.internal,
-    memoryUsage.swap,
-    nextCloudStats.upDown,
-    piDailyStats.nextCloudDbSizeMb,
-    nextCloudStats.myVersion,
-    piDailyStats.nextCloudLatestVersion,
-    piDailyStats.sslCertificateDaysUntilExpires,
-    piDailyStats.nextCloudLastBackup,
-    nextCloudNotesStats.upDown,
-    piDailyStats.nextCloudNotesNumberOf,
-    piDailyStats.nextCloudNotesLastBackup,
-    swapping.in,
-    swapping.out,
-    averageLoad.fiveMin,
-    averageLoad.fifteenMin);
-
-  utils.sendMessageToPhone(utils.configuration.family["brian"], piStatusMsg);
-  */
-
-
-  // New message to my phone
   var hostName = utils.getHostName();
   var piNumber = hostName[hostName.length-1];
 
+  var pi = {
+    diskUsage: getDiskUsage(),
+    memoryUsage: getMemoryUsage(),
+    swapping: getSwapping(),
+    averageLoad: getAverageLoad()
+  };
+  var kodi = getKodiStats();
+  var ufw = getUfwStats();
+  var router = getRouterStats();
 
-  var piStatusNew = {
+  var piStatus = {
     message_datetime: runDate,
     pi:{
-      disk_internal: diskUsage.internal,
-      memory_internal: memoryUsage.internal,
-      memory_swap: memoryUsage.swap,
-      swapping_in: swapping.in,
-      swapping_out: swapping.out,
-      load_one_min: averageLoad.oneMin,
-      load_five_min: averageLoad.fiveMin,
-      load_fifteen_min: averageLoad.fifteenMin,
+      disk_internal: pi.diskUsage.internal,
+      memory_internal: pi.memoryUsage.internal,
+      memory_swap: pi.memoryUsage.swap,
+      swapping_in: pi.swapping.in,
+      swapping_out: pi.swapping.out,
+      load_one_min: pi.averageLoad.oneMin,
+      load_five_min: pi.averageLoad.fiveMin,
+      load_fifteen_min: pi.averageLoad.fifteenMin,
     },
     kodi:{
       status: kodi.status,
@@ -179,7 +108,16 @@ function getPiStatus() {
   };
 
   if (utils.nextCloudIsInstalled()) {
-    piStatusNew.nextcloud = {
+    var piDailyStats = utils.readExistingJsonFile(path.join(__dirname, "pi-daily-stats.json"));
+    logger.verbose(format("DAILY STATS: {0}; {1}; {2}",
+      `Run=${piDailyStats.runDate}`,
+      `NC: DB=${piDailyStats.nextCloudDbSizeMb}mb, Latest Ver=${piDailyStats.nextCloudLatestVersion}, SSL Cert: Expires=${piDailyStats.sslCertificateDaysUntilExpires}`,
+      `NC NOTES: #=${piDailyStats.nextCloudNotesNumberOf}, Last Bkp=${piDailyStats.nextCloudNotesLastBackup}, Brian Note Id=${piDailyStats.nextCloudNoteBrianNoteId}`));
+ 
+    var nextCloudStats = getNextCloudStats();
+    var nextCloudNotesStats = getNextCloudNotesStats(piDailyStats.nextCloudNoteBrianNoteId);
+
+    piStatus.nextcloud = {
       status: nextCloudStats.upDown,
       db_size: piDailyStats.nextCloudDbSizeMb,
       current_version: nextCloudStats.myVersion[0],
@@ -187,37 +125,32 @@ function getPiStatus() {
       ssl_cert_expiry: piDailyStats.sslCertificateDaysUntilExpires,
       last_backup: piDailyStats.nextCloudLastBackup
     };
-    piStatusNew.nextcloud_notes = {
+    piStatus.nextcloud_notes = {
       status: nextCloudNotesStats.upDown,
       last_backup: piDailyStats.nextCloudNotesLastBackup
     };
   }
-  piStatusMsg = format("pi_{0}_status_new|{1}|", piNumber, JSON.stringify(piStatusNew));
-  utils.sendMessageToPhone(utils.configuration.family["brian"], piStatusMsg);
 
-
-
-  if (logger.level == "info") {
-    logger.info(format("PI: " +
-      "Disk: i={0}%, " +
-      "Memory: i={1}%, s={2}%; " + 
-      "Swap: in={3}, out={4}; " +
-      "Load: 1m={5}, 5m={6}, 15m={7}",
-      diskUsage.internal, 
-      memoryUsage.internal, memoryUsage.swap,
-      swapping.in, swapping.out,
-      averageLoad.oneMin, averageLoad.fiveMin, averageLoad.fifteenMin));
-    logger.info(format("KODI: {0}, Versions={1}/{2}", kodi.status, kodi.currentVersion, kodi.latestVersion));
-    logger.info(format("UFW: {0}", ufw.status));
-    logger.info(format("ROUTER: {0}, up {1}; Load: 1m={2}, 5m={3}, 15m={4}; NAS={5}%", router.currentVersion, router.uptime, router.averageLoad.oneMin,
-      router.averageLoad.fiveMin, router.averageLoad.fifteenMin, router.nasStorage));
-    if (utils.nextCloudIsInstalled()) {
-      logger.info(format("NEXTCLOUD: {0}, DB={1} mb, Versions={2}/{3}, SSL={4} days, Bkp={5}; " +
-        "Notes: {6}, #={7}, Bkp={8}",
-        nextCloudStats.upDown, piDailyStats.nextCloudDbSizeMb, nextCloudStats.myVersion, piDailyStats.nextCloudLatestVersion, piDailyStats.sslCertificateDaysUntilExpires, piDailyStats.nextCloudLastBackup,
-        nextCloudNotesStats.upDown, piDailyStats.nextCloudNotesNumberOf, piDailyStats.nextCloudNotesLastBackup));
-    }
+  logger.info(format("PI: {0}; {1}; {2}; {3}",
+    `Disk: i=${pi.diskUsage.internal}%`,
+    `Memory: i=${pi.memoryUsage.internal}%, s=${pi.memoryUsage.swap}%`,
+    `Swap: in=${pi.swapping.in}, out=${pi.swapping.out}`,
+    `Load: 1m=${pi.averageLoad.oneMin}, 5m=${pi.averageLoad.fiveMin}, 15m=${pi.averageLoad.fifteenMin}`));
+  logger.info(`KODI: ${kodi.status}, Versions=${kodi.currentVersion}/${kodi.latestVersion}`);
+  logger.info(`UFW: ${ufw.status}`);
+  logger.info(format("ROUTER: {0}; {1}; {2}",
+    `${router.currentVersion}, up ${router.uptime}`,
+    `Load: 1m=${router.averageLoad.oneMin}, 5m=${router.averageLoad.fiveMin}, 15m=${router.averageLoad.fifteenMin}`,
+    `NAS=${router.nasStorage}%`));
+  if (utils.nextCloudIsInstalled()) {
+    logger.info(format("NEXTCLOUD: {0}",
+      `${nextCloudStats.upDown}, DB=${piDailyStats.nextCloudDbSizeMb} mb, Versions=${nextCloudStats.myVersion}/${piDailyStats.nextCloudLatestVersion}, SSL=${piDailyStats.sslCertificateDaysUntilExpires} days, Bkp=${piDailyStats.nextCloudLastBackup}`));
+    logger.info(format("NEXTCLOUD NOTES: {0}",
+      `Notes: ${nextCloudNotesStats.upDown}, #=${piDailyStats.nextCloudNotesNumberOf}, Bkp=${piDailyStats.nextCloudNotesLastBackup}`));
   }
+
+  piStatusMsg = `pi_${piNumber}_status_new|${JSON.stringify(piStatus)}`;
+  utils.sendMessageToPhone(utils.configuration.family["brian"], piStatusMsg);
 }
 
 
@@ -228,7 +161,7 @@ function getMemoryUsage() {
     .split("\n");
   var list = new Map();
   var parts = null;
-  
+
   values.forEach(v => {
     parts = v.split(":");
     if (parts[1] !== undefined)
@@ -255,9 +188,7 @@ function getDiskUsage() {
   const DF_COLUMN_AVAILABLE = 3;
 
   var usedInternal = 0;
-  var usedExternal = 0;
   var availableInternal = 0;
-  var availableExternal = 0;
 
   // Get disk usage of all other storage (internal)
   utils
@@ -297,18 +228,6 @@ function getSwapping() {
 
 
 function getAverageLoad() {
-  //var parts = utils
-  //  .executeShellCommand("uptime")
-  //  .replace(/\s/g, "")      // remove all spaces
-  //  .split(",");
-
-  //return {
-  //  oneMin: parts[parts.length-3],
-  //  fiveMin: parts[parts.length-2],
-  //  fifteenMin: parts[parts.length-1]
-  //};
-
-
   var uptimeStats = utils.executeShellCommand("uptime");
   var loads = /load average\: ([^,]+), ([^,]+), ([\d\.]+)/i.exec(uptimeStats);
   return {
@@ -435,8 +354,6 @@ function getNextCloudNotesStats(nextCloudNoteBrianNoteId) {
       brian.name, brian.nextcloud.scripts.password,
       utils.configuration.nextcloud.notes.base.url, nextCloudNoteBrianNoteId, "?exclude=modified,category,favorite,title,content,etag");
     var note = utils.executeShellCommand(cmd);
-//logger.verbose("CMD=" + cmd);
-//logger.verbose("   Result=" + note);
     upDown = (note.id != nextCloudNoteBrianNoteId ? "up" : "down");
   }
   catch (ex) {
@@ -447,10 +364,6 @@ function getNextCloudNotesStats(nextCloudNoteBrianNoteId) {
       upDown = (note != null && note.id != nextCloudNoteBrianNoteId ? "up" : "down");
     }
     else {
-//logger.verbose("ERROR checking Notes up/down: ex=" + ex);
-//logger.verbose("   status=" + ex.status);
-//logger.verbose("   stderr=" + ex.stderr.toString());
-//logger.verbose("   stdout=" + ex.stdout.toString());
       upDown = "down";
     }
   }
