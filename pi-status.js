@@ -405,7 +405,7 @@ function getNextCloudStats() {
 
   try {
     myVersion = utils
-      .executeShellCommand("sudo -u www-data php /var/www/nextcloud/status.php | grep versionstring")
+      .executeShellCommand("sudo -u www-data php /var/www/nextcloud/status.php | grep version")
       .match(/[\d\.]+/);
     upDown = "up";
   }

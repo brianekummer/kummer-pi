@@ -106,19 +106,12 @@ function getNextCloudStats() {
       "FROM information_schema.TABLES " +
      "WHERE table_schema='nextcloud'");
 
-  cmd = format(
-    "curl --silent {0} " +
-    "| grep -Po '(?<=\"nextcloud-).*(?=\.zip\")'" +
-    "| tail -1", 
-    utils.configuration.nextcloud.releases.url);
+  // Ask the NextCloud updater to identify the latest release for my release channel - 
+  // MUST be run as sudo
+  cmd = path.join(__dirname, "nextcloud-check-version.sh");
   latestVersion = utils.executeShellCommand(cmd);
-  if (latestVersion == "") {
-    // This is a hack, because sometimes nothing is returned
-    utils.sleep(2000);
-    latestVersion = utils.executeShellCommand(cmd);
-  }
 
-  // Get date of latest backup from google drive folder (/home/pi/GDrive/backups/weekly)
+  // Get date of latest backup from Google drive folder (/home/pi/GDrive/backups/weekly)
   lastBackupFileName = utils
      .executeShellCommand(
         format("ls -1a {0} | grep backup-weekly | tail -1",
