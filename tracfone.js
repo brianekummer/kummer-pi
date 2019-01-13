@@ -189,6 +189,11 @@ function getFormattedRunDate() {
 }
 
 
+function getFullFormattedRunDate() {
+  return moment().format("YYYYMMDDHHmm");
+}
+
+
 function getFamilyMemberData(familyMemberName) {
   return _data.FamilyMembers.filter(fm => fm.Name.toLowerCase() == familyMemberName.toLowerCase())[0];
 }
@@ -688,7 +693,7 @@ function sendAllBalancesToBrian(brian, familyMembersData) {
   logger.verbose("IN sendAllBalancesToBrian");
 
   var msg = format("tracfone_balances_all|{0}|{1}|{2}|{3}|",
-    getFormattedRunDate(), 
+    getFullFormattedRunDate(), 
     getNumDaysUntilRefills(),
     familyMembersData.map(fmd => partialPhoneMessage(fmd)).join("|"),
     getAverageMonthlyBill(3));
