@@ -243,15 +243,15 @@ function getKodiStats() {
 
   var status;
   try {
+    // Get status of Kodi
     cmd = "curl --silent http://localhost:8080";
     var kodiWebPage = utils.executeShellCommand(cmd);
     status = kodiWebPage != "" ? "up" : "down";
 
-    //cmd = "curl --silent header 'Content-Type: application/json' --data-binary '{\"jsonrpc\": \"2.0\", \"method\": \"Player.GetActivePlayers\", \"id\": 1}' http://localhost:8080/jsonrpc";
-    cmd = "curl --silent header 'Content-Type: application/json' --data-binary '{\"jsonrpc\": \"2.0\", \"method\": \"Player.GetActivePlayers\", \"id\": 1}' http://pi-bedroom.kummer:8080/jsonrpc";
+    // Is something playing right now?
+    cmd = "curl --silent --header 'Content-Type: application/json' --data-binary '{\"jsonrpc\": \"2.0\", \"method\": \"Player.GetActivePlayers\", \"id\": 1}' http://localhost:8080/jsonrpc";
     var kodiActivePlayers = utils.executeShellCommand(cmd);
-console.log("KODI=" + kodiActivePlayers);
-    status += kodiActivePlayers.match(/playerid/i) ? "(playing)" : "";
+    status += kodiActivePlayers.match(/playerid/i) ? " (playing)" : "";
   }
   catch (ex) {
     status = "down";
