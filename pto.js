@@ -6,13 +6,13 @@
 //
 // Command-Line Parameters
 // -----------------------
-// Syntax:     node slack-pto.js [loglevel]
+// Syntax:     node pto.js [loglevel]
 // Parameters: loglevel...Is optional. Determines the loglevel used:
 //                        error|warn|info|verbose (default is "error")
 //
 // However, this script is configured via a number of environment variables,
 // and one way of executing it is as follows:
-//   sh -ac '. ./kummer-pi.env; node ptos.js verbose'
+//   sh -ac '. ./kummer-pi.env; node pto.js verbose'
 //
 //
 // Required NPM Packages
@@ -50,29 +50,6 @@ process.on('uncaughtException', uncaughtExceptionHandler.bind(null, {exit:true})
 
 setSlackStatusIfNecessary();
 return;
-
-
-function getRuntimeFromParameters(morningRuntimeLimit, eveningRuntimeLimit) {
-  // Look for a parameter to say if this is being run in the morning or evening.
-  //   - Valid values are morning|evening|other
-  //   - If there is no runtime in the parameters, use times in morningRuntimeLimit
-  //     and eveningRuntimeLimit to decide.
-  //   - process.argv elements are:
-  //       0 = name of the app executing the process (e.g. node)
-  //       1 = name of the js script
-  var value = process
-    .argv
-    .slice(2)
-    .find(p => p.match(/(morning|evening|other)/i));
-
-  if (value == null) {
-    value = (moment().format("HHmm") <= morningRuntimeLimit) ? "morning" :
-            (moment().format("HHmm") >= eveningRuntimeLimit) ? "evening" :
-            "other";
-  }
-
-  return value;
-}
 
 
 function setSlackStatusIfNecessary() {
@@ -127,7 +104,6 @@ function setSlackStatusIfNecessary() {
 function parseCalendarFile(calendarEvents) {
   logger.verbose("In parseCalendarFile");
 
-  var scriptRuntime = getRuntimeFromParameters("0700", "1400");
   var ptoEventsStartingToday = [];
   var ptoStartTime = null;
   var ptoEndTime = null;
@@ -140,16 +116,14 @@ function parseCalendarFile(calendarEvents) {
   // Get all consecutive PTO events starting today 
   ptoEventsStartingToday = getConsecutivePtoEvents(calendarEvents, utils.today);
 
-
   // DEBUGGING CODE!!!!
-  ptoEventsStartingToday = [
-    {
-      start: "20190131T000000",
-      end: "201902020T000000",
-      summary: "Brian PTO"
-    }
-  ];
-
+  //ptoEventsStartingToday = [
+  //  {
+  //    start: "20190131T000000",
+  //    end: "201902020T000000",
+  //    summary: "Brian PTO"
+  //  }
+  //];
 
   if (ptoEventsStartingToday.length > 0) {
     // I am on PTO today :-)
@@ -158,55 +132,32 @@ function parseCalendarFile(calendarEvents) {
     formattedPtoTodayStartTime = ptoStartTime.format("HHmm");
     formattedPtoTodayEndTime = (ptoEndTime > utils.tomorrow) ? "2359" : ptoEndTime.format("HHmm");
 
-    if (scriptRuntime.match(/morning/i)) {
-      // Running this script in the morning, so set my Slack status to say I'm on PTO
-      slackStatus = buildSlackPtoStatusObject(ptoEventsStartingToday, ptoStartTime, ptoEndTime, getSlackVacationEmoji());
+    slackStatus = buildSlackPtoStatusObject(ptoEventsStartingToday, ptoStartTime, ptoEndTime, getSlackVacationEmoji());
       
-      logger.info("PTO today from %s - %s, changing Slack status to %s (expires %s)", formattedPtoTodayStartTime, formattedPtoTodayEndTime, slackStatus.text, slackStatus.expiration);
+    logger.info("PTO today from %s - %s, changing Slack status to %s (expires %s)", formattedPtoTodayStartTime, formattedPtoTodayEndTime, slackStatus.text, slackStatus.expiration);
      
-      setSlackStatus(slackStatus);
-
-    } else if (scriptRuntime.match(/evening/i)) {
-      // Running this script in the evening, so clear my Slack status IF my PTO ends today
-      if (ptoEndTime <= utils.tomorrow) {
-        logger.info("PTO ends today @ %s, clearing Slack status", formattedPtoTodayEndTime);
-
-        // I should really check my Slack status and clear it only if it is the PTO emoji,
-        // or else I risk clearing my status while I'm WFH and my status is "working remotely"
-        setSlackStatus( { text: "", emoji: "", expiration: 0 } );
-
-      } else {
-        logger.info("PTO continues tomorrow, not changing Slack status");
-      }
-
-    } else {
-      logger.info("PTO today from %s - %s, but script not run in morning or evening, not changing Slack status",
-        formattedPtoTodayStartTime, formattedPtoTodayEndTime);
-    }
-
+    setSlackStatus(slackStatus);
   } else {
     logger.info("No PTO today, not changing Slack status");
     formattedPtoTodayStartTime = "";
     formattedPtoTodayEndTime = "";
   }
 
-  if (scriptRuntime.match(/morning/i)) {
-    // Send message to my phone in the morning so it knows if I'm on PTO today
-    phonePtoMessage = format("today_pto|{0}|{1}|{2}|", 
-      moment().format("YYYYMMDDHHmm"), 
-      formattedPtoTodayStartTime, 
-      formattedPtoTodayEndTime);
-    utils.sendMessageToPhone(utils.configuration.family["brian"], phonePtoMessage);
-  }
+  // Send message to my phone so it knows if I'm on PTO today
+  phonePtoMessage = format("today_pto|{0}|{1}|{2}|", 
+    moment().format("YYYYMMDDHHmm"), 
+    formattedPtoTodayStartTime, 
+    formattedPtoTodayEndTime);
+  utils.sendMessageToPhone(utils.configuration.family["brian"], phonePtoMessage);
 }
 
 
 function getSlackVacationEmoji() {
-    var slackStatusVacationParts = utils.configuration.slack.status.vacation.split("|");
+  var slackStatusVacationParts = utils.configuration.slack.status.vacation.split("|");
 
-    return slackStatusVacationParts[0].match(/^:.*:$/)
-      ? slackStatusVacationParts[0]
-      : slackStatusVacationParts[1];
+  return slackStatusVacationParts[0].match(/^:.*:$/)
+    ? slackStatusVacationParts[0]
+    : slackStatusVacationParts[1];
 }
 
 
