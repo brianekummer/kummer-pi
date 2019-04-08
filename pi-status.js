@@ -68,6 +68,7 @@ function getPiStatus() {
   var piNumber = hostName[hostName.length-1];
 
   var pi = {
+    hardware: getHardwareInfo(),
     diskUsage: getDiskUsage(),
     memoryUsage: getMemoryUsage(),
     swapping: getSwapping(),
@@ -80,6 +81,7 @@ function getPiStatus() {
   var piStatus = {
     message_datetime: runDate,
     pi:{
+      hardware: pi.hardware,
       disk_internal: pi.diskUsage.internal,
       memory_internal: pi.memoryUsage.internal,
       memory_swap: pi.memoryUsage.swap,
@@ -131,7 +133,8 @@ function getPiStatus() {
     };
   }
 
-  logger.info(format("PI: {0}; {1}; {2}; {3}",
+  logger.info(format("PI: {0}; {1}; {2}; {3}; {4}",
+    `Hardware: ${pi.hardware}`,
     `Disk: i=${pi.diskUsage.internal}%`,
     `Memory: i=${pi.memoryUsage.internal}%, s=${pi.memoryUsage.swap}%`,
     `Swap: in=${pi.swapping.in}, out=${pi.swapping.out}`,
@@ -377,4 +380,15 @@ function getNextCloudNotesStats(nextCloudNoteBrianNoteId) {
   return {
     upDown: upDown
   };
-}         
+}
+
+
+function getHardwareInfo() {
+  return hardwareInfo = utils
+    .executeShellCommand("cat /proc/device-tree/model")
+    .replace(/Raspberry Pi\s/, "")
+    .replace(/\sModel\s/, "")
+    .replace(/\sPlus/, "+")
+    .replace(/Rev\s/, "v");
+}
+         
