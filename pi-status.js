@@ -82,7 +82,7 @@ function getPiStatus() {
   var piStatus = {
     message_datetime: runDate,
     pi:{
-      hardware: pi.hardware.trim(),
+      hardware: pi.hardware,
       disk_internal: pi.diskUsage.internal,
       memory_internal: pi.memoryUsage.internal,
       memory_swap: pi.memoryUsage.swap,
