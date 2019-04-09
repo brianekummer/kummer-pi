@@ -127,10 +127,19 @@ function nextCloudIsInstalled() {
 function executeShellCommand(cmd) {
   // If ending char is a linefeed, then strip it off
   //console.log("EXECUTING " + cmd);
-  return child_process
-    .execSync(cmd)
-    .toString()
-    .replace(/\n$/, "");
+  //return child_process
+  //  .execSync(cmd)
+  //  .toString()
+  //  .replace(/\n$/, "");
+  try {
+    return child_process
+      .execSync(cmd)
+      .toString()
+      .replace(/\n$/, "");
+  }
+  catch (ex) {
+    logger.error("  ERROR executing shell cmd %s: stdout=%s, stderr=%s", cmd, ex.stdout, ex.stderr);
+  }
 }
 
 

@@ -68,10 +68,12 @@ function getPiStatus() {
   var piNumber = hostName[hostName.length-1];
 
   var pi = {
+    hardware: getHardwareInfo(),
     diskUsage: getDiskUsage(),
     memoryUsage: getMemoryUsage(),
     swapping: getSwapping(),
-    averageLoad: getAverageLoad()
+    averageLoad: getAverageLoad(),
+    underVoltage: getLatestUnderVoltage()
   };
   var kodi = getKodiStats();
   var ufw = getUfwStats();
@@ -80,6 +82,7 @@ function getPiStatus() {
   var piStatus = {
     message_datetime: runDate,
     pi:{
+      hardware: pi.hardware.trim(),
       disk_internal: pi.diskUsage.internal,
       memory_internal: pi.memoryUsage.internal,
       memory_swap: pi.memoryUsage.swap,
@@ -88,6 +91,10 @@ function getPiStatus() {
       load_one_min: pi.averageLoad.oneMin,
       load_five_min: pi.averageLoad.fiveMin,
       load_fifteen_min: pi.averageLoad.fifteenMin,
+      under_voltage: {
+        date: pi.underVoltage != null ? pi.underVoltage.date.format("YYYYMMDDHHmm") : null,
+        duration_sec: pi.underVoltage != null ? pi.underVoltage.durationSeconds : null
+      }
     },
     kodi:{
       status: kodi.status,
@@ -106,7 +113,6 @@ function getPiStatus() {
       nas_storage_used: router.nasStorage
     },
   };
-
   if (utils.nextCloudIsInstalled()) {
     var piDailyStats = utils.readExistingJsonFile(path.join(__dirname, "pi-daily-stats.json"));
     logger.verbose(format("DAILY STATS: {0}; {1}; {2}",
@@ -131,11 +137,19 @@ function getPiStatus() {
     };
   }
 
-  logger.info(format("PI: {0}; {1}; {2}; {3}",
+  var latestUnderVoltageEvent = "";
+  if (pi.underVoltage != null) {
+    latestUnderVoltageEvent = pi.underVoltage.date.format("M/D h:mm a");
+    if (pi.underVoltage.durationSeconds != null)
+      latestUnderVoltageEvent += " " + pi.underVoltage.durationSeconds + " seconds";
+  }
+  logger.info(format("PI: {0}; {1}; {2}; {3}; {4}; {5}",
+    `Hardware: ${pi.hardware}`,
     `Disk: i=${pi.diskUsage.internal}%`,
     `Memory: i=${pi.memoryUsage.internal}%, s=${pi.memoryUsage.swap}%`,
     `Swap: in=${pi.swapping.in}, out=${pi.swapping.out}`,
-    `Load: 1m=${pi.averageLoad.oneMin}, 5m=${pi.averageLoad.fiveMin}, 15m=${pi.averageLoad.fifteenMin}`));
+    `Load: 1m=${pi.averageLoad.oneMin}, 5m=${pi.averageLoad.fiveMin}, 15m=${pi.averageLoad.fifteenMin}`),
+    `Under Voltage: ${latestUnderVoltageEvent}`);
   logger.info(`KODI: ${kodi.status}, Versions=${kodi.currentVersion}/${kodi.latestVersion}`);
   logger.info(`UFW: ${ufw.status}`);
   logger.info(format("ROUTER: {0}; {1}; {2}",
@@ -377,4 +391,54 @@ function getNextCloudNotesStats(nextCloudNoteBrianNoteId) {
   return {
     upDown: upDown
   };
-}         
+}
+
+
+function getHardwareInfo() {
+  // Using the linux TR command to trim out non-ascii characters, since it adds a unicode character at the end
+  return hardwareInfo = utils
+    .executeShellCommand("cat /proc/device-tree/model | tr -cd '\40-\176'")
+    .replace(/Raspberry Pi\s/, "")
+    .replace(/\sModel\s/, "")
+    .replace(/\sPlus/, "+")
+    .replace(/Rev\s/, "v");
+}
+         
+
+function getLatestUnderVoltage() {
+  //cat /var/log/syslog.1 /var/log/syslog | grep -i voltage 
+  //  Apr  8 19:38:09 kummer-pi-1 kernel: [28063.402262] Under-voltage detected! (0x00050005)
+  //  Apr  8 19:38:14 kummer-pi-1 kernel: [28067.562235] Voltage normalised (0x00000000)
+
+  var lines = utils
+    .executeShellCommand("cat /var/log/syslog.1 /var/log/syslog | grep -i voltage")
+    .split("\n");
+
+  var lastUnderVoltageEvent = null;
+
+  if (lines.length > 0) {
+    var lastLine = lines[lines.length-1];
+    var detectedEventLine = null;
+    var normalizedEventLine = null;
+
+    if (lastLine.includes("detected")) {
+      // Last line is "detected", so we're still under voltage and there is no "normalised" event
+      detectedEventLine = lastLine; 
+    }
+    else {
+      // Last line is not "detected", so is "normalised", and we have both the detected and normalised events
+      detectedEventLine = lines[lines.length - 2];
+      normalizedEventLine = lastLine;
+    }
+    latestUnderVoltageEvent = {
+      date:  moment(detectedEventLine.substring(0,15).trim(), "MMM D HH:mm:ss"),
+      durationSeconds: null
+    };
+    if (normalizedEventLine != null) {
+      var normalizedDateTime = moment(normalizedEventLine.substring(0,15).trim(), "MMM D HH:mm:ss");
+      latestUnderVoltageEvent.durationSeconds = moment.duration(normalizedDateTime.diff(latestUnderVoltageEvent.date)).asSeconds();
+    }
+  }
+
+  return latestUnderVoltageEvent;
+}
