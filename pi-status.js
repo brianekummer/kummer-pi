@@ -410,7 +410,12 @@ function getLatestUnderVoltage() {
   //  Apr  8 19:38:09 kummer-pi-1 kernel: [28063.402262] Under-voltage detected! (0x00050005)
   //  Apr  8 19:38:14 kummer-pi-1 kernel: [28067.562235] Voltage normalised (0x00000000)
 
-  var lines = utils.executeShellCommand("cat /var/log/syslog.1 /var/log/syslog | grep -i voltage");
+  //var lines = utils.executeShellCommand("cat /var/log/syslog.1 /var/log/syslog | grep -i voltage");
+  var lines = utils
+    .executeShellCommand(format("( {0}; {1}; ) | {2}",
+      "zcat /var/log/syslog.4 /var/log/syslog.3 /var/log/syslog.2",
+      "cat /var/log/syslog.1 /var/log/syslog",
+      "grep -i voltage"));
   var events = (lines == undefined ? [] : lines.split("\n"));
 
   var latestUnderVoltageEvent = null;
