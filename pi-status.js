@@ -401,7 +401,8 @@ function getHardwareInfo() {
     .replace(/Raspberry Pi\s/, "")
     .replace(/\sModel\s/, "")
     .replace(/\sPlus/, "+")
-    .replace(/Rev\s/, "v");
+    .replace(/Rev\s.*$/, "")    // Remove the firmware version- I don't care!
+    .trim();
 }
          
 
