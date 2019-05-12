@@ -73,7 +73,8 @@ function getPiStatus() {
     memoryUsage: getMemoryUsage(),
     swapping: getSwapping(),
     averageLoad: getAverageLoad(),
-    underVoltage: getLatestUnderVoltage()
+    underVoltage: getLatestUnderVoltage(),
+    latestUpgrade: getLatestPiUpgrade()
   };
   var kodi = getKodiStats();
   var ufw = getUfwStats();
@@ -94,7 +95,8 @@ function getPiStatus() {
       under_voltage: {
         date: pi.underVoltage != null ? pi.underVoltage.date.format("YYYYMMDDHHmm") : null,
         duration_sec: pi.underVoltage != null ? pi.underVoltage.durationSeconds : null
-      }
+      },
+      latest_upgrade: pi.latestUpgrade
     },
     kodi:{
       status: kodi.status,
@@ -143,8 +145,9 @@ function getPiStatus() {
     if (pi.underVoltage.durationSeconds != null)
       latestUnderVoltageEvent += " " + pi.underVoltage.durationSeconds + " seconds";
   }
-  logger.info(format("PI: {0}; {1}; {2}; {3}; {4}; {5}",
+  logger.info(format("PI: {0}; {1}; {2}; {3}; {4}; {5}; {6}",
     `Hardware: ${pi.hardware}`,
+    `Latest Upgrade: ${pi.latestUpgrade}`,
     `Disk: i=${pi.diskUsage.internal}%`,
     `Memory: i=${pi.memoryUsage.internal}%, s=${pi.memoryUsage.swap}%`,
     `Swap: in=${pi.swapping.in}, out=${pi.swapping.out}`,
@@ -446,4 +449,18 @@ function getLatestUnderVoltage() {
   }
 
   return latestUnderVoltageEvent;
+}
+
+
+function getLatestPiUpgrade() {
+  // Returns date of last time apt-get upgrade was run on the pi
+  return utils
+    .executeShellCommand(format("{0}|{1}|{2}|{3}|{4}|{5}|{6}",
+      "zcat -f /var/log/apt/history.log /var/log/apt/history*gz",  
+      "grep -B1 'Commandline:.* upgrade'",
+      "grep 'Start-Date'",
+      "cut -d ' ' -f 2",
+      "sort",
+      "tail -1",
+      "tr -d -"));
 }
