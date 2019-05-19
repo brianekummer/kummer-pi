@@ -308,12 +308,21 @@ function getRouterStats() {
   var uptime = /up ([^,]+),/i.exec(uptimeStats)[1];
   var loads = /load average\: ([^,]+), ([^,]+), ([^<]+)<\/span>/i.exec(uptimeStats);
 
-  var parts = utils
-    .executeShellCommand("df -aBM | grep '//router.kummer'")
-    .replace(/\s\s+/g, " ")      // convert multiple spaces into one space
-    .split(" ");
-  var nasStorageUsed = Number(parts[DF_COLUMN_USED].match(/\d+/));
-  var nasStorageAvailable = Number(parts[DF_COLUMN_AVAILABLE].match(/\d+/));
+  var nasStorageUsedPercentage = null;
+  try { 
+    // This should not fail, but if it does, make sure the storage
+    // used is something absurd. It could fail because the network
+    // drive is not mounted.
+    var parts = utils
+      .executeShellCommand("df -aBM | grep '//router.kummer'")
+      .replace(/\s\s+/g, " ")      // convert multiple spaces into one space
+      .split(" ");
+    var nasStorageUsed = Number(parts[DF_COLUMN_USED].match(/\d+/));
+    var nasStorageAvailable = Number(parts[DF_COLUMN_AVAILABLE].match(/\d+/));
+    nasStorageUsedPercentage = Math.round(nasStorageUsed/nasStorageAvailable*100);
+  } catch (ex) {
+    nasStorageUsedPercentage = 999; 
+  }
 
   return {
     currentVersion: version,
@@ -323,7 +332,7 @@ function getRouterStats() {
       fiveMin: loads[2],
       fifteenMin: loads[3]
     },
-    nasStorage: Math.round(nasStorageUsed/nasStorageAvailable*100)
+    nasStorage: nasStorageUsedPercentage 
   };
 }
 
@@ -414,13 +423,15 @@ function getLatestUnderVoltage() {
   //  Apr  8 19:38:09 kummer-pi-1 kernel: [28063.402262] Under-voltage detected! (0x00050005)
   //  Apr  8 19:38:14 kummer-pi-1 kernel: [28067.562235] Voltage normalised (0x00000000)
 
-  //var lines = utils.executeShellCommand("cat /var/log/syslog.1 /var/log/syslog | grep -i voltage");
+  // If the grep finds no matches, it returns status code 1, signalling an error. To prevent
+  // this, I appended "|| true" to the command, which is always successful, causing status code
+  // 0 to always be returned. 
   var lines = utils
     .executeShellCommand(format("( {0}; {1}; ) | {2}",
       "zcat /var/log/syslog.4 /var/log/syslog.3 /var/log/syslog.2",
       "cat /var/log/syslog.1 /var/log/syslog",
-      "grep -i voltage"));
-  var events = (lines == undefined ? [] : lines.split("\n"));
+      "grep -i voltage || true"));
+  var events = (lines == undefined || lines == "" ? [] : lines.split("\n"));
 
   var latestUnderVoltageEvent = null;
 
