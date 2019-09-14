@@ -216,10 +216,11 @@ function findDuplicateNotesForOneUser(familyMember, notes) {
       emailMessage =
         format("{0},\n\nThese notes could be duplicates:\n{1}", familyMember.name, emailMessage);
 
+      // Hard-code it to always email me
       utils.sendGmail(utils.configuration.pi.gmail.username, 
         utils.configuration.pi.gmail.password,
         format('"{0}" <{1}>', "Kummer Cloud", utils.configuration.pi.gmail.username),
-        format('"{0} {1}" <{2}>', familyMember.name, "Kummer", familyMember.email),
+        format('"{0} {1}" <{2}>', familyMember.name, "Kummer", "brianekummer@gmail.com"),    //familyMember.email),
         "NextCloud Notes - Possible duplicates", emailMessage, null);
     }
 
