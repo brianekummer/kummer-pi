@@ -180,6 +180,28 @@ logger.info("------------------------------------------------------------");
       }
       break;
 
+    case "push-numbers":
+      // Push numbers to a phone, don't look them up
+      //   0 = 
+      //   1 =
+      //   2 = family member
+      //   3 = min
+      //   4 = texts
+      //   5 = data
+      var args = process.argv;
+      var myArgs = process.argv.slice(2);
+      var who = getFamilyMemberFromParameters();
+      var minutes = myArgs[3];
+      var texts = myArgs[4];
+      var data = myArgs[5];
+ 
+      var whoData = { Name: who, TracFoneBalances: [ { Minutes: minutes, Texts: texts, Mb: data } ] };
+
+      var whoConfig = utils.configuration.family[who];
+      _driver
+        .then(() => sendSomeoneTheirBalances(whoConfig, whoData))
+      break;
+
   }
 return;
 
@@ -201,7 +223,7 @@ function getFamilyMemberData(familyMemberName) {
 
 function getScriptAction() {
   // Look for scriptAction in parameters.
-  // Valid values are get-balances|add-purchase|list-purchases
+  // Valid values are get-balances|add-purchase|list-purchases|push-numbers
   // If there is no script action in the parameters, default to get-balances.
   // Note that process.argv elements are:
   //   0 = name of the app executing the process (e.g. node)
@@ -209,7 +231,7 @@ function getScriptAction() {
   var value = process
     .argv
     .slice(2)
-    .find(p => p.match(/(get-balances|list-balances|add-purchase|list-purchases)/i));
+    .find(p => p.match(/(get-balances|list-balances|add-purchase|list-purchases|push-numbers)/i));
 
   return (value || "get-balances");
 }
