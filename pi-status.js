@@ -314,7 +314,7 @@ function getRouterStats() {
     // used is something absurd. It could fail because the network
     // drive is not mounted.
     var parts = utils
-      .executeShellCommand("df -aBM | grep '//router.kummer'")
+      .executeShellCommand("df -aBM | grep '//router'")
       .replace(/\s\s+/g, " ")      // convert multiple spaces into one space
       .split(" ");
     var nasStorageUsed = Number(parts[DF_COLUMN_USED].match(/\d+/));
